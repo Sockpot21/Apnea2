@@ -1,0 +1,790 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f2ba7bcf62dd6534e8988e284cb2c510, type: 3}
+  m_Name: AugmentDb
+  m_EditorClassIdentifier: Assembly-CSharp::AugmentDb
+  bodyParts:
+  - displayName: Head
+    bodyPart: 0
+    category: 0
+    description: Standard human Head
+    subParts:
+    - subPartID: skin_head
+      displayName: Skin
+      category: 0
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 20
+      breachThreshold: 15
+      resistances:
+      - damageType: 0
+        multiplier: 1.3
+      - damageType: 1
+        multiplier: 1.2
+      - damageType: 2
+        multiplier: 1.2
+      - damageType: 3
+        multiplier: 1.4
+      - damageType: 4
+        multiplier: 1.1
+    - subPartID: skull
+      displayName: Bone
+      category: 2
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 90
+      breachThreshold: 20
+      resistances:
+      - damageType: 0
+        multiplier: 0.5
+      - damageType: 1
+        multiplier: 0.8
+      - damageType: 2
+        multiplier: 1.6
+      - damageType: 3
+        multiplier: 0.4
+      - damageType: 4
+        multiplier: 1.3
+    - subPartID: Brain
+      displayName: Brain
+      category: 8
+      isOrgan: 1
+      organHitChance: 0.05
+      maxHealth: 30
+      breachThreshold: 5
+      resistances:
+      - damageType: 0
+        multiplier: 1.5
+      - damageType: 1
+        multiplier: 1.7
+      - damageType: 2
+        multiplier: 0.9
+      - damageType: 3
+        multiplier: 2
+      - damageType: 4
+        multiplier: 2
+    - subPartID: Eye_L
+      displayName: Left Eye
+      category: 7
+      isOrgan: 1
+      organHitChance: 0.1
+      maxHealth: 40
+      breachThreshold: 10
+      resistances:
+      - damageType: 0
+        multiplier: 1.5
+      - damageType: 1
+        multiplier: 1.7
+      - damageType: 2
+        multiplier: 0.9
+      - damageType: 3
+        multiplier: 2
+      - damageType: 4
+        multiplier: 2
+    - subPartID: Eye_R
+      displayName: Right Eye
+      category: 7
+      isOrgan: 1
+      organHitChance: 0.1
+      maxHealth: 40
+      breachThreshold: 10
+      resistances:
+      - damageType: 0
+        multiplier: 1.5
+      - damageType: 1
+        multiplier: 1.7
+      - damageType: 2
+        multiplier: 0.9
+      - damageType: 3
+        multiplier: 2
+      - damageType: 4
+        multiplier: 2
+  - displayName: Chest
+    bodyPart: 1
+    category: 0
+    description: Standard human chest.
+    subParts:
+    - subPartID: skin_chest
+      displayName: Skin
+      category: 0
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 90
+      breachThreshold: 18
+      resistances:
+      - damageType: 0
+        multiplier: 1.3
+      - damageType: 1
+        multiplier: 1.2
+      - damageType: 2
+        multiplier: 1.2
+      - damageType: 3
+        multiplier: 1.4
+      - damageType: 4
+        multiplier: 1.1
+    - subPartID: chest_muscle
+      displayName: Chest Muscle
+      category: 1
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 100
+      breachThreshold: 20
+      resistances:
+      - damageType: 0
+        multiplier: 0.5
+      - damageType: 1
+        multiplier: 0.8
+      - damageType: 2
+        multiplier: 1.6
+      - damageType: 3
+        multiplier: 0.4
+      - damageType: 4
+        multiplier: 1.3
+    - subPartID: Ribcage
+      displayName: Ribcage
+      category: 2
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 120
+      breachThreshold: 25
+      resistances:
+      - damageType: 0
+        multiplier: 0.5
+      - damageType: 1
+        multiplier: 0.8
+      - damageType: 2
+        multiplier: 1.6
+      - damageType: 3
+        multiplier: 0.4
+      - damageType: 4
+        multiplier: 1.3
+    - subPartID: lung_L
+      displayName: Left Lung
+      category: 4
+      isOrgan: 1
+      organHitChance: 0.2
+      maxHealth: 40
+      breachThreshold: 10
+      resistances:
+      - damageType: 0
+        multiplier: 1.5
+      - damageType: 1
+        multiplier: 1.7
+      - damageType: 2
+        multiplier: 0.9
+      - damageType: 3
+        multiplier: 2
+      - damageType: 4
+        multiplier: 2
+    - subPartID: lung_R
+      displayName: Right Lung
+      category: 4
+      isOrgan: 1
+      organHitChance: 0.2
+      maxHealth: 40
+      breachThreshold: 10
+      resistances:
+      - damageType: 0
+        multiplier: 1.5
+      - damageType: 1
+        multiplier: 1.7
+      - damageType: 2
+        multiplier: 0.9
+      - damageType: 3
+        multiplier: 2
+      - damageType: 4
+        multiplier: 2
+    - subPartID: heart
+      displayName: Heart
+      category: 3
+      isOrgan: 1
+      organHitChance: 0.15
+      maxHealth: 20
+      breachThreshold: 10
+      resistances:
+      - damageType: 0
+        multiplier: 1.5
+      - damageType: 1
+        multiplier: 1.7
+      - damageType: 2
+        multiplier: 0.9
+      - damageType: 3
+        multiplier: 2
+      - damageType: 4
+        multiplier: 2
+  - displayName: Abdomen
+    bodyPart: 2
+    category: 0
+    description: Standard human abdomen.
+    subParts:
+    - subPartID: skin_chest
+      displayName: Skin
+      category: 0
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 90
+      breachThreshold: 18
+      resistances:
+      - damageType: 0
+        multiplier: 1.3
+      - damageType: 1
+        multiplier: 1.2
+      - damageType: 2
+        multiplier: 1.2
+      - damageType: 3
+        multiplier: 1.4
+      - damageType: 4
+        multiplier: 1.1
+    - subPartID: stomach_Muscle
+      displayName: Stomach Muscle
+      category: 1
+      isOrgan: 0
+      organHitChance: 0.15
+      maxHealth: 20
+      breachThreshold: 10
+      resistances:
+      - damageType: 0
+        multiplier: 1.5
+      - damageType: 1
+        multiplier: 1.7
+      - damageType: 2
+        multiplier: 0.9
+      - damageType: 3
+        multiplier: 2
+      - damageType: 4
+        multiplier: 2
+    - subPartID: lung_L
+      displayName: Left Lung
+      category: 4
+      isOrgan: 1
+      organHitChance: 0.2
+      maxHealth: 40
+      breachThreshold: 10
+      resistances:
+      - damageType: 0
+        multiplier: 1.5
+      - damageType: 1
+        multiplier: 1.7
+      - damageType: 2
+        multiplier: 0.9
+      - damageType: 3
+        multiplier: 2
+      - damageType: 4
+        multiplier: 2
+    - subPartID: lung_R
+      displayName: Right Lung
+      category: 4
+      isOrgan: 1
+      organHitChance: 0.2
+      maxHealth: 40
+      breachThreshold: 10
+      resistances:
+      - damageType: 0
+        multiplier: 1.5
+      - damageType: 1
+        multiplier: 1.7
+      - damageType: 2
+        multiplier: 0.9
+      - damageType: 3
+        multiplier: 2
+      - damageType: 4
+        multiplier: 2
+    - subPartID: heart
+      displayName: Heart
+      category: 3
+      isOrgan: 1
+      organHitChance: 0.15
+      maxHealth: 20
+      breachThreshold: 10
+      resistances:
+      - damageType: 0
+        multiplier: 1.5
+      - damageType: 1
+        multiplier: 1.7
+      - damageType: 2
+        multiplier: 0.9
+      - damageType: 3
+        multiplier: 2
+      - damageType: 4
+        multiplier: 2
+  - displayName: Left Forearm
+    bodyPart: 5
+    category: 0
+    description: Standard human left forearm
+    subParts:
+    - subPartID: skin_leftForearm
+      displayName: Skin
+      category: 0
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 60
+      breachThreshold: 18
+      resistances:
+      - damageType: 0
+        multiplier: 1.4
+      - damageType: 1
+        multiplier: 1.2
+      - damageType: 2
+        multiplier: 0.7
+      - damageType: 3
+        multiplier: 1.3
+      - damageType: 4
+        multiplier: 1
+    - subPartID: muscle_leftForearm
+      displayName: Muscle
+      category: 1
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 90
+      breachThreshold: 25
+      resistances:
+      - damageType: 0
+        multiplier: 1.2
+      - damageType: 1
+        multiplier: 1.1
+      - damageType: 2
+        multiplier: 0.9
+      - damageType: 3
+        multiplier: 1.1
+      - damageType: 4
+        multiplier: 1
+    - subPartID: bone_leftForearm
+      displayName: Bone
+      category: 2
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 90
+      breachThreshold: 25
+      resistances:
+      - damageType: 0
+        multiplier: 0.5
+      - damageType: 1
+        multiplier: 0.8
+      - damageType: 2
+        multiplier: 1.6
+      - damageType: 3
+        multiplier: 0.4
+      - damageType: 4
+        multiplier: 1.3
+  - displayName: Left Upper Arm
+    bodyPart: 3
+    category: 0
+    description: Standard human left upper arm.
+    subParts:
+    - subPartID: skin_leftUpperArm
+      displayName: Skin
+      category: 0
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 60
+      breachThreshold: 18
+      resistances:
+      - damageType: 0
+        multiplier: 1.4
+      - damageType: 1
+        multiplier: 1.2
+      - damageType: 2
+        multiplier: 0.7
+      - damageType: 3
+        multiplier: 1.3
+      - damageType: 4
+        multiplier: 1
+    - subPartID: muscle_leftUpperArm
+      displayName: Muscle
+      category: 1
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 90
+      breachThreshold: 25
+      resistances:
+      - damageType: 0
+        multiplier: 1.2
+      - damageType: 1
+        multiplier: 1.1
+      - damageType: 2
+        multiplier: 0.9
+      - damageType: 3
+        multiplier: 1.1
+      - damageType: 4
+        multiplier: 1
+    - subPartID: bone_leftUpperArm
+      displayName: Bone
+      category: 2
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 90
+      breachThreshold: 25
+      resistances:
+      - damageType: 0
+        multiplier: 0.5
+      - damageType: 1
+        multiplier: 0.8
+      - damageType: 2
+        multiplier: 1.6
+      - damageType: 3
+        multiplier: 0.4
+      - damageType: 4
+        multiplier: 1.3
+  - displayName: Right Forearm
+    bodyPart: 6
+    category: 0
+    description: Standard human right forearm
+    subParts:
+    - subPartID: skin_rightForearm
+      displayName: Skin
+      category: 0
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 60
+      breachThreshold: 18
+      resistances:
+      - damageType: 0
+        multiplier: 1.4
+      - damageType: 1
+        multiplier: 1.2
+      - damageType: 2
+        multiplier: 0.7
+      - damageType: 3
+        multiplier: 1.3
+      - damageType: 4
+        multiplier: 1
+    - subPartID: muscle_rightForearm
+      displayName: Muscle
+      category: 1
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 90
+      breachThreshold: 25
+      resistances:
+      - damageType: 0
+        multiplier: 1.2
+      - damageType: 1
+        multiplier: 1.1
+      - damageType: 2
+        multiplier: 0.9
+      - damageType: 3
+        multiplier: 1.1
+      - damageType: 4
+        multiplier: 1
+    - subPartID: bone_rightForearm
+      displayName: Bone
+      category: 2
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 90
+      breachThreshold: 25
+      resistances:
+      - damageType: 0
+        multiplier: 0.5
+      - damageType: 1
+        multiplier: 0.8
+      - damageType: 2
+        multiplier: 1.6
+      - damageType: 3
+        multiplier: 0.4
+      - damageType: 4
+        multiplier: 1.3
+  - displayName: Right Upper Arm
+    bodyPart: 4
+    category: 0
+    description: Standard human right upper arm.
+    subParts:
+    - subPartID: skin_rightUpperArm
+      displayName: Skin
+      category: 0
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 60
+      breachThreshold: 18
+      resistances:
+      - damageType: 0
+        multiplier: 1.4
+      - damageType: 1
+        multiplier: 1.2
+      - damageType: 2
+        multiplier: 0.7
+      - damageType: 3
+        multiplier: 1.3
+      - damageType: 4
+        multiplier: 1
+    - subPartID: muscle_rightUpperArm
+      displayName: Muscle
+      category: 1
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 90
+      breachThreshold: 25
+      resistances:
+      - damageType: 0
+        multiplier: 1.2
+      - damageType: 1
+        multiplier: 1.1
+      - damageType: 2
+        multiplier: 0.9
+      - damageType: 3
+        multiplier: 1.1
+      - damageType: 4
+        multiplier: 1
+    - subPartID: bone_rightUpperArm
+      displayName: Bone
+      category: 2
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 90
+      breachThreshold: 25
+      resistances:
+      - damageType: 0
+        multiplier: 0.5
+      - damageType: 1
+        multiplier: 0.8
+      - damageType: 2
+        multiplier: 1.6
+      - damageType: 3
+        multiplier: 0.4
+      - damageType: 4
+        multiplier: 1.3
+  - displayName: Left Thigh
+    bodyPart: 7
+    category: 0
+    description: Standard human left thigh
+    subParts:
+    - subPartID: skin_leftThigh
+      displayName: Skin
+      category: 0
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 80
+      breachThreshold: 20
+      resistances:
+      - damageType: 0
+        multiplier: 1.3
+      - damageType: 1
+        multiplier: 1.2
+      - damageType: 2
+        multiplier: 0.8
+      - damageType: 3
+        multiplier: 1.4
+      - damageType: 4
+        multiplier: 1
+    - subPartID: muscle_leftThigh
+      displayName: Muscle
+      category: 1
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 110
+      breachThreshold: 25
+      resistances:
+      - damageType: 0
+        multiplier: 1.3
+      - damageType: 1
+        multiplier: 1.2
+      - damageType: 2
+        multiplier: 1
+      - damageType: 3
+        multiplier: 1.2
+      - damageType: 4
+        multiplier: 1
+    - subPartID: bone_leftThigh
+      displayName: Bone
+      category: 2
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 130
+      breachThreshold: 30
+      resistances:
+      - damageType: 0
+        multiplier: 0.5
+      - damageType: 1
+        multiplier: 0.8
+      - damageType: 2
+        multiplier: 1.6
+      - damageType: 3
+        multiplier: 0.4
+      - damageType: 4
+        multiplier: 1.3
+  - displayName: Left Shin
+    bodyPart: 9
+    category: 0
+    description: Standard human left shin
+    subParts:
+    - subPartID: skin_leftShin
+      displayName: Skin
+      category: 0
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 80
+      breachThreshold: 20
+      resistances:
+      - damageType: 0
+        multiplier: 1.3
+      - damageType: 1
+        multiplier: 1.2
+      - damageType: 2
+        multiplier: 0.8
+      - damageType: 3
+        multiplier: 1.4
+      - damageType: 4
+        multiplier: 1
+    - subPartID: muscle_leftShin
+      displayName: Muscle
+      category: 1
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 110
+      breachThreshold: 25
+      resistances:
+      - damageType: 0
+        multiplier: 1.3
+      - damageType: 1
+        multiplier: 1.2
+      - damageType: 2
+        multiplier: 1
+      - damageType: 3
+        multiplier: 1.2
+      - damageType: 4
+        multiplier: 1
+    - subPartID: bone_leftShin
+      displayName: Bone
+      category: 2
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 130
+      breachThreshold: 30
+      resistances:
+      - damageType: 0
+        multiplier: 0.5
+      - damageType: 1
+        multiplier: 0.8
+      - damageType: 2
+        multiplier: 1.6
+      - damageType: 3
+        multiplier: 0.4
+      - damageType: 4
+        multiplier: 1.3
+  - displayName: Right Thigh
+    bodyPart: 8
+    category: 0
+    description: Standard human right thigh
+    subParts:
+    - subPartID: skin_rightThigh
+      displayName: Skin
+      category: 0
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 80
+      breachThreshold: 20
+      resistances:
+      - damageType: 0
+        multiplier: 1.3
+      - damageType: 1
+        multiplier: 1.2
+      - damageType: 2
+        multiplier: 0.8
+      - damageType: 3
+        multiplier: 1.4
+      - damageType: 4
+        multiplier: 1
+    - subPartID: muscle_rightThigh
+      displayName: Muscle
+      category: 1
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 110
+      breachThreshold: 25
+      resistances:
+      - damageType: 0
+        multiplier: 1.3
+      - damageType: 1
+        multiplier: 1.2
+      - damageType: 2
+        multiplier: 1
+      - damageType: 3
+        multiplier: 1.2
+      - damageType: 4
+        multiplier: 1
+    - subPartID: bone_rightThigh
+      displayName: Bone
+      category: 2
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 130
+      breachThreshold: 30
+      resistances:
+      - damageType: 0
+        multiplier: 0.5
+      - damageType: 1
+        multiplier: 0.8
+      - damageType: 2
+        multiplier: 1.6
+      - damageType: 3
+        multiplier: 0.4
+      - damageType: 4
+        multiplier: 1.3
+  - displayName: Right Shin
+    bodyPart: 10
+    category: 0
+    description: Standard human right shin
+    subParts:
+    - subPartID: skin_rightShin
+      displayName: Skin
+      category: 0
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 80
+      breachThreshold: 20
+      resistances:
+      - damageType: 0
+        multiplier: 1.3
+      - damageType: 1
+        multiplier: 1.2
+      - damageType: 2
+        multiplier: 0.8
+      - damageType: 3
+        multiplier: 1.4
+      - damageType: 4
+        multiplier: 1
+    - subPartID: muscle_rightShin
+      displayName: Muscle
+      category: 1
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 110
+      breachThreshold: 25
+      resistances:
+      - damageType: 0
+        multiplier: 1.3
+      - damageType: 1
+        multiplier: 1.2
+      - damageType: 2
+        multiplier: 1
+      - damageType: 3
+        multiplier: 1.2
+      - damageType: 4
+        multiplier: 1
+    - subPartID: bone_rightShin
+      displayName: Bone
+      category: 2
+      isOrgan: 0
+      organHitChance: 0
+      maxHealth: 130
+      breachThreshold: 30
+      resistances:
+      - damageType: 0
+        multiplier: 0.5
+      - damageType: 1
+        multiplier: 0.8
+      - damageType: 2
+        multiplier: 1.6
+      - damageType: 3
+        multiplier: 0.4
+      - damageType: 4
+        multiplier: 1.3
