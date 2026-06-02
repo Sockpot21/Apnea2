@@ -1,17 +1,9 @@
 ﻿// HealthManager.cs
-// Owns the player's living body state at runtime.
-// On startup: deep-copies blueprints from AugmentDb into mutable runtime instances.
-// On damage: runs the full cascade — structural layers → organ rolls → PlayerHealth notify.
-// Exposes install/swap methods for augments at runtime.
-//
-// Attach to the player root GameObject alongside PlayerHealth.
+// DEBUG VERSION: Consolidated combat logging into single report per hit.
 
 using UnityEngine;
 using System.Collections.Generic;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Runtime sub-part state (mutable copy of SubPartDefinition)
-// ─────────────────────────────────────────────────────────────────────────────
+using System.Text;
 
 public class RuntimeSubPart
 {
@@ -24,7 +16,6 @@ public class RuntimeSubPart
     public float currentHealth;
     public float breachThreshold;
 
-    // Keyed by DamageType for O(1) runtime lookup
     public Dictionary<DamageType, float> resistanceMap = new Dictionary<DamageType, float>();
 
     public bool IsDestroyed => currentHealth <= 0f;
@@ -34,9 +25,6 @@ public class RuntimeSubPart
         return resistanceMap.TryGetValue(type, out float m) ? m : 1f;
     }
 
-    /// <summary>
-    /// Deep-copies a SubPartDefinition into a new RuntimeSubPart.
-    /// </summary>
     public static RuntimeSubPart FromDefinition(SubPartDefinition def)
     {
         var rt = new RuntimeSubPart
@@ -58,22 +46,14 @@ public class RuntimeSubPart
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Runtime body part state (mutable copy of BodyPartDefinition)
-// ─────────────────────────────────────────────────────────────────────────────
-
 public class RuntimeBodyPart
 {
     public BodyPart bodyPart;
     public string displayName;
 
-    // Structural layers in cascade order (outer → inner), organs excluded
     public List<RuntimeSubPart> layers = new List<RuntimeSubPart>();
-
-    // Organs — hit by chance when a layer above them is breached
     public List<RuntimeSubPart> organs = new List<RuntimeSubPart>();
 
-    // Overall condition as a 0–1 ratio (product of all sub-part HP ratios)
     public float ConditionRatio
     {
         get
@@ -109,24 +89,20 @@ public class RuntimeBodyPart
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Damage result — returned from ProcessDamage, forwarded to PlayerHealth
-// ─────────────────────────────────────────────────────────────────────────────
-
 public class DamageResult
 {
     public BodyPart bodyPart;
     public List<LayerHitRecord> layerHits = new List<LayerHitRecord>();
     public List<OrganHitRecord> organHits = new List<OrganHitRecord>();
-    public float conditionAfter; // ConditionRatio post-damage
+    public float conditionAfter;
 }
 
 public class LayerHitRecord
 {
     public string displayName;
-    public float incomingDamage;    // Raw damage that arrived at this layer
-    public float totalDamage;       // After multiplier (incoming × multiplier)
-    public float hpDamageDealt;     // Actual HP subtracted from this layer
+    public float incomingDamage;
+    public float totalDamage;
+    public float hpDamageDealt;
     public float healthAfter;
     public bool breached;
     public bool destroyed;
@@ -142,54 +118,27 @@ public class OrganHitRecord
     public bool destroyed;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Collider → BodyPart mapping entry (set up in Inspector or via code)
-// ─────────────────────────────────────────────────────────────────────────────
-
 [System.Serializable]
 public class ColliderBodyPartMapping
 {
-    [Tooltip("The Collider component on the hitbox child GameObject")]
     public Collider hitCollider;
-
-    [Tooltip("Which body part this collider represents")]
     public BodyPart bodyPart;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HealthManager
-// ─────────────────────────────────────────────────────────────────────────────
-
 public class HealthManager : MonoBehaviour
 {
-    // ── Inspector references ──────────────────────────────────────────────────
-
     [Header("Data Sources")]
-    [Tooltip("The definition library ScriptableObject")]
     public AugmentDb augmentDb;
-
-    [Tooltip("The full augment catalogue ScriptableObject")]
     public AugmentCatalogue augmentCatalogue;
 
     [Header("Collider → Body Part Mappings")]
-    [Tooltip("Assign each of the 11 hitbox colliders and their associated body part here. " +
-             "Alternatively call RegisterCollider() at runtime.")]
-    public List<ColliderBodyPartMapping> colliderMappings = new List<ColliderBodyPartMapping>();
+    public List<ColliderBodyPartMapping> colliderMappings;
 
     [Header("References")]
     public PlayerHealth playerHealth;
 
-    // ── Runtime state ─────────────────────────────────────────────────────────
-
-    // The live, mutable body. Keyed by BodyPart enum.
-    private Dictionary<BodyPart, RuntimeBodyPart> _body
-        = new Dictionary<BodyPart, RuntimeBodyPart>();
-
-    // Fast collider lookup built from colliderMappings
-    private Dictionary<Collider, BodyPart> _colliderMap
-        = new Dictionary<Collider, BodyPart>();
-
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    private Dictionary<BodyPart, RuntimeBodyPart> _body = new();
+    private Dictionary<Collider, BodyPart> _colliderMap = new();
 
     private void Awake()
     {
@@ -199,33 +148,14 @@ public class HealthManager : MonoBehaviour
 
     private void Start()
     {
-        // Push initial state to PlayerHealth for UI
         playerHealth?.OnBodyInitialised(_body);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Initialisation
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Deep-copies every body part definition from AugmentDb into runtime instances.
-    /// </summary>
     private void InitialiseBody()
     {
-        if (augmentDb == null)
-        {
-            Debug.LogError("[HealthManager] AugmentDb is not assigned.");
-            return;
-        }
-
         _body.Clear();
         foreach (var def in augmentDb.bodyParts)
-        {
-            var runtime = RuntimeBodyPart.FromDefinition(def);
-            _body[def.bodyPart] = runtime;
-        }
-
-        Debug.Log($"[HealthManager] Body initialised with {_body.Count} body parts.");
+            _body[def.bodyPart] = RuntimeBodyPart.FromDefinition(def);
     }
 
     private void BuildColliderMap()
@@ -233,117 +163,113 @@ public class HealthManager : MonoBehaviour
         _colliderMap.Clear();
         foreach (var mapping in colliderMappings)
         {
-            if (mapping.hitCollider == null)
-            {
-                Debug.LogWarning("[HealthManager] A collider mapping has a null Collider — skipped.");
-                continue;
-            }
+            if (mapping.hitCollider == null) continue;
             _colliderMap[mapping.hitCollider] = mapping.bodyPart;
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Public damage entry point
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Call this when the player is hit.
-    /// hitCollider  — the collider that was struck (used to identify body part)
-    /// damageEntries — one or more (DamageType, amount) pairs (supports multi-type hits)
-    /// </summary>
     public void ReceiveDamage(Collider hitCollider,
-                              List<(DamageType type, float amount)> damageEntries)
+        List<(DamageType type, float amount)> damageEntries)
     {
-        if (!_colliderMap.TryGetValue(hitCollider, out BodyPart part))
-        {
-            Debug.LogWarning($"[HealthManager] Hit collider '{hitCollider.name}' " +
-                             $"has no body part mapping — damage ignored.");
-            return;
-        }
-
+        if (!_colliderMap.TryGetValue(hitCollider, out BodyPart part)) return;
         ReceiveDamageOnPart(part, damageEntries);
     }
 
-    /// <summary>
-    /// Overload: accepts a BodyPart directly (useful for testing or scripted damage).
-    /// </summary>
     public void ReceiveDamageOnPart(BodyPart part,
-                                    List<(DamageType type, float amount)> damageEntries)
+        List<(DamageType type, float amount)> damageEntries)
     {
-        if (!_body.TryGetValue(part, out RuntimeBodyPart bodyPart))
-        {
-            Debug.LogWarning($"[HealthManager] Body part {part} not found in runtime body.");
-            return;
-        }
+        if (!_body.TryGetValue(part, out RuntimeBodyPart bodyPart)) return;
 
         var result = new DamageResult { bodyPart = part };
+        var log = new StringBuilder();
 
-        // Process each damage type independently through the same cascade
+        log.AppendLine("═══════════════════════════════");
+        log.AppendLine($"[DAMAGE REPORT] {bodyPart.displayName}");
+        log.AppendLine("Incoming:");
         foreach (var (type, amount) in damageEntries)
-            ProcessDamageType(bodyPart, type, amount, result);
+            log.AppendLine($" - {type}: {amount}");
+
+        foreach (var (type, amount) in damageEntries)
+            ProcessDamageType(bodyPart, type, amount, result, log);
 
         result.conditionAfter = bodyPart.ConditionRatio;
 
-        // Notify PlayerHealth
+        log.AppendLine($"[FINAL CONDITION] {result.conditionAfter:F2}");
+        log.AppendLine("═══════════════════════════════");
+        Debug.Log(log.ToString());
+
         playerHealth?.OnDamageReceived(result);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Core damage cascade
-    // ─────────────────────────────────────────────────────────────────────────
-
-    private void ProcessDamageType(RuntimeBodyPart bodyPart, DamageType type,
-                                   float incoming, DamageResult result)
+    private void ProcessDamageType(
+        RuntimeBodyPart bodyPart,
+        DamageType type,
+        float incoming,
+        DamageResult result,
+        StringBuilder log)
     {
-        // ── Structural cascade ────────────────────────────────────────────────
+        log.AppendLine($"\n[CASCADE] {bodyPart.displayName} | {type}");
+        log.AppendLine($"Incoming: {incoming}");
 
-        bool anyLayerBreached = false;
+        // Organs only roll if the cascade breaches ALL the way through the
+        // innermost structural layer. Track this separately from anyBreach.
+        bool innermostLayerBreached = false;
         float spillover = incoming;
+        int lastLayerIndex = bodyPart.layers.Count - 1;
 
         for (int i = 0; i < bodyPart.layers.Count; i++)
         {
             var layer = bodyPart.layers[i];
+            bool isLast = (i == lastLayerIndex);
 
-            // Destroyed layers pass damage through without modification
+            log.AppendLine($"\n-- LAYER {i}: {layer.displayName} --");
+
             if (layer.IsDestroyed)
             {
-                result.layerHits.Add(new LayerHitRecord
-                {
-                    displayName = layer.displayName,
-                    incomingDamage = spillover,
-                    totalDamage = spillover,
-                    hpDamageDealt = 0f,
-                    healthAfter = 0f,
-                    breached = true,
-                    destroyed = true
-                });
+                log.AppendLine("Already destroyed — damage passes through.");
+                // A destroyed layer counts as breached for cascade purposes
+                if (isLast) innermostLayerBreached = true;
                 continue;
             }
 
-            float multiplier = layer.GetMultiplier(type);
-            float totalDamage = spillover * multiplier;
+            float hpBefore = layer.currentHealth;
+            float mult = layer.GetMultiplier(type);
+            float totalDamage = spillover * mult;
+
+            log.AppendLine($"HP: {hpBefore}/{layer.maxHealth}");
+            log.AppendLine($"Multiplier: {mult}");
+            log.AppendLine($"Damage: {spillover} × {mult} = {totalDamage}");
 
             bool breached = totalDamage > layer.breachThreshold;
-            bool isLastLayer = (i == bodyPart.layers.Count - 1);
-
             float hpDamage;
 
-            if (breached && !isLastLayer)
+            if (breached && !isLast)
             {
-                // Layer is breached but not the last:
-                // This layer absorbs only the raw incoming, total spills to next layer
+                // Breached a non-final layer: absorbs raw incoming, total spills onward
                 hpDamage = spillover;
                 spillover = totalDamage;
+                log.AppendLine("BREACH → spillover continues");
             }
             else
             {
-                // No breach, or this is the last layer:
-                // Layer absorbs the full calculated total, cascade ends
+                // Either not breached, or this is the last layer: cascade stops here
                 hpDamage = totalDamage;
                 spillover = 0f;
+
+                if (breached && isLast)
+                {
+                    // Breached through the innermost structural layer — organs are at risk
+                    innermostLayerBreached = true;
+                    log.AppendLine("BREACH of innermost layer → organs at risk");
+                }
+                else
+                {
+                    log.AppendLine("Stopped cascade — organs safe");
+                }
             }
 
             layer.currentHealth = Mathf.Max(0f, layer.currentHealth - hpDamage);
+            log.AppendLine($"HP After: {layer.currentHealth}");
 
             result.layerHits.Add(new LayerHitRecord
             {
@@ -356,72 +282,68 @@ public class HealthManager : MonoBehaviour
                 destroyed = layer.IsDestroyed
             });
 
-            if (breached) anyLayerBreached = true;
-
-            // Stop cascade if not breached
             if (!breached) break;
         }
 
-        // ── Organ rolls (only if at least one structural layer was breached) ──
-
-        if (anyLayerBreached && bodyPart.organs.Count > 0)
-            ProcessOrganRolls(bodyPart, type, spillover > 0f ? spillover : incoming, result);
+        // Only roll for organs if the cascade punched through the innermost layer
+        if (innermostLayerBreached && bodyPart.organs.Count > 0)
+            ProcessOrganRolls(bodyPart, type, spillover > 0f ? spillover : incoming, result, log);
+        else if (bodyPart.organs.Count > 0)
+            log.AppendLine("\n[ORGANS] Skipped — innermost layer held.");
     }
 
-    private void ProcessOrganRolls(RuntimeBodyPart bodyPart, DamageType type,
-                                   float incomingToOrgan, DamageResult result)
+    private void ProcessOrganRolls(
+        RuntimeBodyPart bodyPart,
+        DamageType type,
+        float incoming,
+        DamageResult result,
+        StringBuilder log)
     {
+        log.AppendLine("\n[ORGANS]");
+
         foreach (var organ in bodyPart.organs)
         {
             if (organ.IsDestroyed) continue;
 
-            // Independent hit roll per organ
-            if (Random.value > organ.organHitChance) continue;
+            float roll = Random.value;
+            log.AppendLine($"\n{organ.displayName}");
+            log.AppendLine($"Roll: {roll} vs {organ.organHitChance}");
 
-            float multiplier = organ.GetMultiplier(type);
-            float totalDamage = incomingToOrgan * multiplier;
+            if (roll > organ.organHitChance)
+            {
+                log.AppendLine("Miss");
+                continue;
+            }
 
-            bool breached = totalDamage > organ.breachThreshold;
+            float mult = organ.GetMultiplier(type);
+            float damage = incoming * mult;
+            organ.currentHealth = Mathf.Max(0f, organ.currentHealth - damage);
 
-            // Organs are a single layer — they always absorb the full total
-            float hpDamage = totalDamage;
-            organ.currentHealth = Mathf.Max(0f, organ.currentHealth - hpDamage);
+            log.AppendLine($"HIT → {incoming} × {mult} = {damage}");
+            log.AppendLine($"HP After: {organ.currentHealth}");
 
             result.organHits.Add(new OrganHitRecord
             {
                 displayName = organ.displayName,
-                incomingDamage = incomingToOrgan,
-                totalDamage = totalDamage,
-                hpDamageDealt = hpDamage,
+                incomingDamage = incoming,
+                totalDamage = damage,
+                hpDamageDealt = damage,
                 healthAfter = organ.currentHealth,
                 destroyed = organ.IsDestroyed
             });
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Augment install / swap API
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Replaces an entire body part with an augment's definition.
-    /// </summary>
     public void InstallFullAugment(string augmentID)
     {
         var entry = augmentCatalogue?.GetAugment(augmentID);
         if (entry == null || entry.isSubPartAugment) return;
 
-        var runtime = RuntimeBodyPart.FromDefinition(entry.definition);
-        _body[entry.targetBodyPart] = runtime;
-
+        _body[entry.targetBodyPart] = RuntimeBodyPart.FromDefinition(entry.definition);
         Debug.Log($"[HealthManager] Full augment installed: {entry.displayName} → {entry.targetBodyPart}");
         playerHealth?.OnBodyInitialised(_body);
     }
 
-    /// <summary>
-    /// Replaces a single sub-part layer within a body part.
-    /// Matches by SubPartCategory — replaces the first matching layer found.
-    /// </summary>
     public void InstallSubPartAugment(string augmentID)
     {
         var entry = augmentCatalogue?.GetAugment(augmentID);
@@ -429,59 +351,36 @@ public class HealthManager : MonoBehaviour
 
         if (!_body.TryGetValue(entry.targetBodyPart, out RuntimeBodyPart bodyPart))
         {
-            Debug.LogWarning($"[HealthManager] Cannot install sub-part augment — " +
-                             $"body part {entry.targetBodyPart} not found.");
+            Debug.LogWarning($"[HealthManager] Body part {entry.targetBodyPart} not found.");
             return;
         }
 
         var newRuntime = RuntimeSubPart.FromDefinition(entry.subPartDefinition);
 
-        // Try structural layers first
         for (int i = 0; i < bodyPart.layers.Count; i++)
         {
             if (bodyPart.layers[i].category == entry.targetSubPartCategory)
             {
                 bodyPart.layers[i] = newRuntime;
-                Debug.Log($"[HealthManager] Sub-part augment installed: " +
-                          $"{entry.displayName} → {entry.targetBodyPart} layer {i}");
                 playerHealth?.OnBodyInitialised(_body);
                 return;
             }
         }
 
-        // Then organs
         for (int i = 0; i < bodyPart.organs.Count; i++)
         {
             if (bodyPart.organs[i].category == entry.targetSubPartCategory)
             {
                 bodyPart.organs[i] = newRuntime;
-                Debug.Log($"[HealthManager] Sub-part augment installed: " +
-                          $"{entry.displayName} → {entry.targetBodyPart} organ slot {i}");
                 playerHealth?.OnBodyInitialised(_body);
                 return;
             }
         }
 
-        Debug.LogWarning($"[HealthManager] No matching sub-part category " +
-                         $"'{entry.targetSubPartCategory}' found in {entry.targetBodyPart}.");
+        Debug.LogWarning($"[HealthManager] No matching sub-part category '{entry.targetSubPartCategory}' in {entry.targetBodyPart}.");
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Runtime collider registration (for procedural / non-Inspector setup)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Register a collider → body part mapping at runtime.
-    /// Useful if hitbox GameObjects are spawned procedurally.
-    /// </summary>
-    public void RegisterCollider(Collider col, BodyPart part)
-    {
-        _colliderMap[col] = part;
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Read-only state access (for PlayerHealth, UI, etc.)
-    // ─────────────────────────────────────────────────────────────────────────
+    public void RegisterCollider(Collider col, BodyPart part) => _colliderMap[col] = part;
 
     public RuntimeBodyPart GetBodyPart(BodyPart part)
     {

@@ -1,48 +1,32 @@
 // PlayerInteraction.cs
-// Handles E key interaction raycast and action map switching.
+// Handles E key interaction (station + item pickup), inventory toggle,
+// and action map / cursor switching.
 // Attach to the same GameObject as Player.cs.
-// Player.cs needs one small addition — see the comment at the bottom of this file.
-//
-// ── Input Asset setup you need to do ─────────────────────────────────────────
-// 1. Open Assets > Input > PlayerInput in the Input Action Editor.
-// 2. Select the "UI" action map.
-// 3. Add one action: name it "Close", binding: Escape key.
-//    (The UI action map already exists — just needs this binding so the player
-//     can close the station UI with Escape as a fallback.)
-// 4. Save the asset and regenerate the C# class
-//    (select the asset → Inspector → Generate C# Class → hit the button).
-// ─────────────────────────────────────────────────────────────────────────────
 
 using UnityEngine;
 
 public class PlayerInteraction : MonoBehaviour
 {
     [Header("References")]
-    [SerializeField] private PlayerCharacter    playerCharacter;
-    [SerializeField] private PlayerCamera       playerCamera;    // used for raycast origin
+    [SerializeField] private PlayerCharacter playerCharacter;
+    [SerializeField] private PlayerCamera playerCamera;
     [SerializeField] private ModificationStationUI stationUI;
+    [SerializeField] private InventoryUI inventoryUI;
+    [SerializeField] private PlayerInventory playerInventory;
 
     [Header("Interaction")]
     [SerializeField] private float interactionRange = 2.5f;
-    [SerializeField] private LayerMask interactionMask = ~0; // everything by default
+    [SerializeField] private LayerMask interactionMask = ~0;
 
-    // Set by Player.cs via SetInputActions()
     private PlayerInput _inputActions;
-    public bool        _uiOpen = false;
+    public bool _uiOpen = false;
 
-    // ── Called by Player.cs after it creates _inputActions ───────────────────
+    // ── Called by Player.cs ───────────────────────────────────────────────────
 
-    /// <summary>
-    /// Call this from Player.Start() after creating and enabling _inputActions.
-    /// Example:
-    ///     GetComponent<PlayerInteraction>()?.SetInputActions(_inputActions);
-    /// </summary>
     public void SetInputActions(PlayerInput inputActions)
     {
         _inputActions = inputActions;
-
-        // Subscribe to UI Close action (Escape) to allow closing via keyboard
-        _inputActions.UI.Close.performed += _ => TryCloseUI();
+        _inputActions.UI.Close.performed += _ => TryCloseActiveUI();
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -54,6 +38,11 @@ public class PlayerInteraction : MonoBehaviour
             stationUI.OnUIOpened += HandleUIOpened;
             stationUI.OnUIClosed += HandleUIClosed;
         }
+        if (inventoryUI != null)
+        {
+            inventoryUI.OnUIOpened += HandleUIOpened;
+            inventoryUI.OnUIClosed += HandleUIClosed;
+        }
     }
 
     private void OnDisable()
@@ -63,46 +52,121 @@ public class PlayerInteraction : MonoBehaviour
             stationUI.OnUIOpened -= HandleUIOpened;
             stationUI.OnUIClosed -= HandleUIClosed;
         }
+        if (inventoryUI != null)
+        {
+            inventoryUI.OnUIOpened -= HandleUIOpened;
+            inventoryUI.OnUIClosed -= HandleUIClosed;
+        }
     }
 
     private void Update()
     {
         if (_inputActions == null) return;
 
-        //Debug.Log($"Interact pressed: {_inputActions.Gameplay.Interact.WasPressedThisFrame()}");
-
+        // Interact (E key) — only when no UI is open
         if (!_uiOpen && _inputActions.Gameplay.Interact.WasPressedThisFrame())
             TryInteract();
+
+        // Inventory toggle
+        if (_inputActions.Gameplay.Inventory.WasPressedThisFrame())
+            ToggleInventory();
     }
 
-    // ── Interaction ───────────────────────────────────────────────────────────
+    // ── Interact (E key) ──────────────────────────────────────────────────────
 
     private void TryInteract()
     {
-        var camTransform = Camera.main.transform;
+        var cam = Camera.main.transform;
 
-        var station = FindObjectOfType<ModificationStation>();
-        if (station == null) return;
+        // Cast a ray from the centre of the screen
+        var ray = new Ray(cam.position, cam.forward);
 
-        float dist = Vector3.Distance(camTransform.position, station.transform.position);
-        if (dist > interactionRange)
+        // Check what the ray hits within range
+        if (Physics.Raycast(ray, out var hit, interactionRange, interactionMask))
         {
-            Debug.Log($"[Interact] Too far: {dist}");
+            // Try pickup first (most common world interaction)
+            var pickup = hit.collider.GetComponent<PickupItem>();
+            if (pickup != null)
+            {
+                TryPickup(pickup);
+                return;
+            }
+
+            // Try modification station
+            var station = hit.collider.GetComponent<ModificationStation>();
+            if (station != null)
+            {
+                // Close inventory if open before opening station
+                if (inventoryUI != null && inventoryUI.IsOpen)
+                    inventoryUI.Close();
+
+                station.Interact();
+                return;
+            }
+        }
+        else
+        {
+            // Raycast missed — fall back to proximity check for station
+            // (station may not have a collider perfectly centred for raycast)
+            var station = FindClosestStation(cam.position);
+            if (station != null)
+            {
+                if (inventoryUI != null && inventoryUI.IsOpen)
+                    inventoryUI.Close();
+
+                station.Interact();
+            }
+        }
+    }
+
+    // ── Pickup ────────────────────────────────────────────────────────────────
+
+    private void TryPickup(PickupItem pickup)
+    {
+        if (playerInventory == null)
+        {
+            Debug.LogWarning("[Interact] No PlayerInventory assigned.");
             return;
         }
 
-        station.Interact();
+        if (!playerInventory.HasSpace())
+        {
+            Debug.Log("[Interact] Inventory full.");
+            return;
+        }
 
-        _uiOpen = true;
-        Cursor.lockState = CursorLockMode.None;
-        Cursor.visible = true;
-        _inputActions.Gameplay.Disable();
+        var item = pickup.Collect();
+        playerInventory.TryAdd(item);
     }
 
-    private void TryCloseUI()
+    // ── Inventory toggle ──────────────────────────────────────────────────────
+
+    private void ToggleInventory()
     {
-        if (_uiOpen && stationUI != null && stationUI.IsOpen)
-            stationUI.Close();
+        if (inventoryUI == null) return;
+
+        if (inventoryUI.IsOpen)
+        {
+            inventoryUI.Close();
+        }
+        else
+        {
+            // Close station UI if open
+            if (stationUI != null && stationUI.IsOpen)
+                stationUI.Close();
+
+            inventoryUI.Open();
+        }
+    }
+
+    // ── Close active UI (Escape) ──────────────────────────────────────────────
+
+    private void TryCloseActiveUI()
+    {
+        if (!_uiOpen) return;
+
+        if (stationUI != null && stationUI.IsOpen) { stationUI.Close(); return; }
+        if (inventoryUI != null && inventoryUI.IsOpen) { inventoryUI.Close(); return; }
     }
 
     // ── Action map switching ──────────────────────────────────────────────────
@@ -110,36 +174,39 @@ public class PlayerInteraction : MonoBehaviour
     private void HandleUIOpened()
     {
         _uiOpen = true;
-
-        // Disable gameplay input, enable UI input
         _inputActions.Gameplay.Disable();
         _inputActions.UI.Enable();
-
-        // Unlock cursor for UI navigation
         Cursor.lockState = CursorLockMode.None;
-        Cursor.visible   = true;
+        Cursor.visible = true;
     }
 
     private void HandleUIClosed()
     {
-        _uiOpen = false;
+        // Only re-enable gameplay if no other UI is still open
+        if ((stationUI != null && stationUI.IsOpen) ||
+            (inventoryUI != null && inventoryUI.IsOpen))
+            return;
 
-        // Re-enable gameplay input, disable UI input
+        _uiOpen = false;
         _inputActions.UI.Disable();
         _inputActions.Gameplay.Enable();
-
-        // Re-lock cursor
         Cursor.lockState = CursorLockMode.Locked;
-        Cursor.visible   = false;
+        Cursor.visible = false;
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private ModificationStation FindClosestStation(Vector3 from)
+    {
+        var stations = FindObjectsByType<ModificationStation>(FindObjectsSortMode.None);
+        ModificationStation closest = null;
+        float minDist = interactionRange;
+
+        foreach (var s in stations)
+        {
+            float d = Vector3.Distance(from, s.transform.position);
+            if (d < minDist) { minDist = d; closest = s; }
+        }
+        return closest;
     }
 }
-
-
-// ═════════════════════════════════════════════════════════════════════════════
-// CHANGES NEEDED IN Player.cs
-// Add these two lines to the Start() method, after _inputActions.Enable():
-//
-//     GetComponent<PlayerInteraction>()?.SetInputActions(_inputActions);
-//
-// That's the only change. Everything else in Player.cs stays identical.
-// ═════════════════════════════════════════════════════════════════════════════

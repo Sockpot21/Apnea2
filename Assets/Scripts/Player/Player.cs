@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -10,21 +10,22 @@ public class Player : MonoBehaviour
     [SerializeField] private PlayerCamera playerCamera;
     [SerializeField] private CameraSpring cameraSpring;
     [SerializeField] private CameraLean cameraLean;
+    [SerializeField] private CameraFOV cameraFOV;
     [SerializeField] private Volume volume;
     [SerializeField] private StanceVinette stanceVignette;
     [SerializeField] private HealthManager healthManager;
     private PlayerInput _inputActions;
 
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
         _inputActions = new PlayerInput();
         _inputActions.Enable();
-        GetComponent<PlayerInteraction>()?.SetInputActions(_inputActions);      //Potentially nuke
+        GetComponent<PlayerInteraction>()?.SetInputActions(_inputActions);
         playerCharacter.Initialize();
         playerCamera.Initialize(playerCharacter.GetCameraTarget());
         cameraSpring.Initialize();
         cameraLean.Initialize();
+        cameraFOV.Initialize();
         stanceVignette.Initialize(volume.profile);
     }
 
@@ -37,13 +38,15 @@ public class Player : MonoBehaviour
     {
         if (!GetComponent<PlayerInteraction>()._uiOpen)
             Cursor.lockState = CursorLockMode.Locked;
+
         var input = _inputActions.Gameplay;
         var deltaTime = Time.deltaTime;
 
-        //Get camera input and update its rotation
+        // Camera rotation
         var cameraInput = new CameraInput { Look = input.Look.ReadValue<Vector2>() };
         playerCamera.UpdateRotation(cameraInput);
-        //Get character input and update it
+
+        // Character input
         var characterInput = new CharacterInput
         {
             Rotation = playerCamera.transform.rotation,
@@ -51,19 +54,19 @@ public class Player : MonoBehaviour
             Jump = input.Jump.WasPressedThisFrame(),
             JumpSustain = input.Jump.IsPressed(),
             Crouch = input.Crouch.WasPressedThisFrame()
-                        ? CrouchInput.Toggle
-                        : CrouchInput.None
+                          ? CrouchInput.Toggle
+                          : CrouchInput.None,
+            Sprint = input.Sprint.IsPressed()
         };
         playerCharacter.UpdateInput(characterInput);
         playerCharacter.UpdateBody(deltaTime);
+
 #if UNITY_EDITOR
         if (Keyboard.current.tKey.wasPressedThisFrame)
         {
             var ray = new Ray(playerCamera.transform.position, playerCamera.transform.forward);
             if (Physics.Raycast(ray, out var hit))
-            {
                 Teleport(hit.point);
-            }
         }
 #endif
     }
@@ -73,6 +76,7 @@ public class Player : MonoBehaviour
         var deltaTime = Time.deltaTime;
         var cameraTarget = playerCharacter.GetCameraTarget();
         var state = playerCharacter.GetState();
+
         playerCamera.UpdatePosition(cameraTarget);
         cameraSpring.UpdateSpring(deltaTime, cameraTarget.up);
         cameraLean.UpdateLean
@@ -82,6 +86,7 @@ public class Player : MonoBehaviour
                 state.Acceloration,
                 cameraTarget.up
             );
+        cameraFOV.UpdateFOV(deltaTime, state.Stance, state.Velocity);
         stanceVignette.UpdateVignette(deltaTime, state.Stance);
     }
 

@@ -1,13 +1,6 @@
 ﻿// ModificationStationUI.cs
-// Builds its entire UI hierarchy from scratch in code.
-// Only requires one empty GameObject on the Canvas named "ModificationStationUI"
-// with this script attached, RectTransform stretched to fill Canvas.
-//
-// ── Inspector fields ──────────────────────────────────────────────────────────
-//   Health Manager    → HealthManager component
-//   Augment Catalogue → AugmentCatalogue ScriptableObject
-//   Canvas Rect       → RectTransform on the Canvas GameObject
-// ─────────────────────────────────────────────────────────────────────────────
+// Vertical tab layout (left sidebar) with main content area (right).
+// Status tab is read-only, augment tabs show installable items.
 
 using System.Collections.Generic;
 using UnityEngine;
@@ -21,11 +14,11 @@ public class ModificationStationUI : MonoBehaviour
     [SerializeField] private AugmentCatalogue augmentCatalogue;
     [SerializeField] private RectTransform canvasRect;
 
-    // ── Colours ───────────────────────────────────────────────────────────────
+    [Header("Colors")]
     private static readonly Color ColBg = new Color(0.08f, 0.08f, 0.10f, 0.97f);
     private static readonly Color ColHeader = new Color(0.05f, 0.05f, 0.07f, 1.00f);
     private static readonly Color ColTabActive = new Color(0.20f, 0.55f, 1.00f, 1.00f);
-    private static readonly Color ColTabStatus = new Color(0.15f, 0.48f, 0.28f, 1.00f); // green tint for status tab
+    private static readonly Color ColTabStatus = new Color(0.15f, 0.48f, 0.28f, 1.00f);
     private static readonly Color ColTabIdle = new Color(0.18f, 0.18f, 0.22f, 1.00f);
     private static readonly Color ColRowNormal = new Color(0.12f, 0.12f, 0.15f, 1.00f);
     private static readonly Color ColRowHover = new Color(0.20f, 0.22f, 0.30f, 1.00f);
@@ -33,22 +26,21 @@ public class ModificationStationUI : MonoBehaviour
     private static readonly Color ColBtnClose = new Color(0.45f, 0.10f, 0.10f, 1.00f);
     private static readonly Color ColBtnYes = new Color(0.10f, 0.42f, 0.10f, 1.00f);
     private static readonly Color ColBtnNo = new Color(0.42f, 0.10f, 0.10f, 1.00f);
-    private static readonly Color ColSeparator = new Color(0.25f, 0.55f, 1.00f, 0.40f);
     private static readonly Color ColHealthy = new Color(0.20f, 0.90f, 0.30f, 1.00f);
     private static readonly Color ColDamaged = new Color(0.90f, 0.80f, 0.10f, 1.00f);
     private static readonly Color ColCritical = new Color(0.90f, 0.20f, 0.10f, 1.00f);
     private static readonly Color ColDestroyed = new Color(0.35f, 0.35f, 0.35f, 1.00f);
     private static readonly Color ColSubBar = new Color(0.25f, 0.55f, 1.00f, 1.00f);
 
-    // ── Sentinel value for the status tab ────────────────────────────────────
-    // We use a separate bool rather than abusing the BodyPart enum
     private const string STATUS_TAB_ID = "__STATUS__";
 
-    // ── Built references ──────────────────────────────────────────────────────
+    // Built UI
     private GameObject _root;
+    private GameObject _leftSidebar;
+    private GameObject _rightContent;
     private Transform _tabContent;
 
-    // Augment list panel
+    // Augment list
     private GameObject _augmentPanel;
     private Transform _listContent;
     private ScrollRect _listScroll;
@@ -62,17 +54,17 @@ public class ModificationStationUI : MonoBehaviour
     private GameObject _confirmOverlay;
     private TextMeshProUGUI _confirmText;
 
-    // ── Runtime state ─────────────────────────────────────────────────────────
+    // Runtime state
     private BodyPart _selectedPart = BodyPart.Head;
     private bool _statusTabActive = false;
     private AugmentEntry _pending;
 
-    // Tab tracking — parallel lists, index matches
+    // Tab tracking
     private readonly List<Image> _tabImages = new();
-    private readonly List<string> _tabIds = new(); // BodyPart.ToString() or STATUS_TAB_ID
+    private readonly List<string> _tabIds = new();
     private readonly List<GameObject> _augRows = new();
 
-    // Status panel live widgets — rebuilt once on status tab open, updated in Update()
+    // Status widgets
     private class StatusBodyPartWidget
     {
         public BodyPart bodyPart;
@@ -85,7 +77,7 @@ public class ModificationStationUI : MonoBehaviour
     }
     private class StatusSubPartWidget
     {
-        public string subPartID;   // matched against RuntimeSubPart.subPartID
+        public string subPartID;
         public bool isOrgan;
         public TextMeshProUGUI hpLabel;
         public Image hpBar;
@@ -106,7 +98,7 @@ public class ModificationStationUI : MonoBehaviour
         RefreshStatusWidgets();
     }
 
-    // ── Master build ─────────────────────────────────────────────────────────
+    // ── Master build ──────────────────────────────────────────────────────────
 
     private void BuildUI()
     {
@@ -130,20 +122,11 @@ public class ModificationStationUI : MonoBehaviour
         titleTMP.alignment = TextAlignmentOptions.Center;
         titleTMP.color = Color.white;
 
-        // Separator under header
-        MakeSeparator(_root.transform, -56, -58);
+        // Left sidebar (tabs)
+        BuildLeftSidebar();
 
-        // Tab row
-        BuildTabRow();
-
-        // Separator under tabs
-        MakeSeparator(_root.transform, -102, -104);
-
-        // Augment list panel (default visible)
-        BuildAugmentPanel();
-
-        // Status panel (default hidden)
-        BuildStatusPanel();
+        // Right content area (augments or status)
+        BuildRightContent();
 
         // Close button
         var closeGO = MakeRect("CloseBtn", _root.transform);
@@ -155,63 +138,61 @@ public class ModificationStationUI : MonoBehaviour
         closeBtn.onClick.AddListener(Close);
         MakeBtnLabel(closeGO.transform, "CLOSE", 14);
 
-        // Confirm overlay (floats above everything)
+        // Confirm overlay
         BuildConfirmOverlay();
 
         _root.SetActive(false);
     }
 
-    // ── Tab row ───────────────────────────────────────────────────────────────
+    // ── Left sidebar ──────────────────────────────────────────────────────────
 
-    private void BuildTabRow()
+    private void BuildLeftSidebar()
     {
-        var tabRow = MakeRect("TabRow", _root.transform);
-        var tabRowRT = tabRow.GetComponent<RectTransform>();
-        tabRowRT.anchorMin = new Vector2(0, 1);
-        tabRowRT.anchorMax = new Vector2(1, 1);
-        tabRowRT.pivot = new Vector2(0.5f, 1f);
-        tabRowRT.offsetMin = new Vector2(0, -102);
-        tabRowRT.offsetMax = new Vector2(0, -58);
-        MakeImage(tabRow, ColHeader);
+        _leftSidebar = MakeRect("LeftSidebar", _root.transform);
+        var sidebarRT = _leftSidebar.GetComponent<RectTransform>();
+        sidebarRT.anchorMin = new Vector2(0, 0);
+        sidebarRT.anchorMax = new Vector2(0, 1);
+        sidebarRT.pivot = new Vector2(0, 0.5f);
+        sidebarRT.offsetMin = new Vector2(0, 50);
+        sidebarRT.offsetMax = new Vector2(140, -50);
+        MakeImage(_leftSidebar, ColHeader);
 
-        var tabSR = tabRow.AddComponent<ScrollRect>();
-        tabSR.horizontal = true;
-        tabSR.vertical = false;
-        tabSR.scrollSensitivity = 20f;
-        tabSR.movementType = ScrollRect.MovementType.Clamped;
-        tabSR.horizontalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+        var sidebarScroll = _leftSidebar.AddComponent<ScrollRect>();
+        sidebarScroll.horizontal = false;
+        sidebarScroll.vertical = true;
+        sidebarScroll.scrollSensitivity = 40f;
+        sidebarScroll.movementType = ScrollRect.MovementType.Clamped;
 
-        var tabVP = MakeRect("Viewport", tabRow.transform);
-        Stretch(tabVP.GetComponent<RectTransform>(), 4, 4, 4, 4);
-        var tabMask = tabVP.AddComponent<Mask>();
-        tabMask.showMaskGraphic = false;
-        var tabVPImg = tabVP.AddComponent<Image>();
-        tabVPImg.color = new Color(0, 0, 0, 0.01f);
-        tabSR.viewport = tabVP.GetComponent<RectTransform>();
+        var viewport = MakeRect("Viewport", _leftSidebar.transform);
+        Stretch(viewport.GetComponent<RectTransform>(), 0, 0, 0, 0);
+        var mask = viewport.AddComponent<Mask>();
+        mask.showMaskGraphic = false;
+        viewport.AddComponent<Image>().color = new Color(0, 0, 0, 0.01f);
+        sidebarScroll.viewport = viewport.GetComponent<RectTransform>();
 
-        var tabContentGO = MakeRect("TabContent", tabVP.transform);
-        var tabContentRT = tabContentGO.GetComponent<RectTransform>();
-        tabContentRT.anchorMin = new Vector2(0, 0);
-        tabContentRT.anchorMax = new Vector2(0, 1);
-        tabContentRT.pivot = new Vector2(0, 0.5f);
-        tabContentRT.offsetMin = Vector2.zero;
-        tabContentRT.offsetMax = Vector2.zero;
-        var tabHLG = tabContentGO.AddComponent<HorizontalLayoutGroup>();
-        tabHLG.spacing = 4f;
-        tabHLG.padding = new RectOffset(4, 4, 4, 4);
-        tabHLG.childForceExpandWidth = false;
-        tabHLG.childForceExpandHeight = true;
-        tabHLG.childControlWidth = false;
-        tabHLG.childControlHeight = true;
-        var tabCSF = tabContentGO.AddComponent<ContentSizeFitter>();
-        tabCSF.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
-        tabSR.content = tabContentRT;
-        _tabContent = tabContentGO.transform;
+        var contentGO = MakeRect("TabContent", viewport.transform);
+        var contentRT = contentGO.GetComponent<RectTransform>();
+        contentRT.anchorMin = new Vector2(0, 1);
+        contentRT.anchorMax = new Vector2(1, 1);
+        contentRT.pivot = new Vector2(0.5f, 1f);
+        contentRT.offsetMin = Vector2.zero;
+        contentRT.offsetMax = Vector2.zero;
 
-        // Status tab — always first
+        var vlg = contentGO.AddComponent<VerticalLayoutGroup>();
+        vlg.spacing = 2f;
+        vlg.padding = new RectOffset(4, 4, 4, 4);
+        vlg.childForceExpandWidth = true;
+        vlg.childForceExpandHeight = false;
+        vlg.childControlWidth = true;
+        vlg.childControlHeight = false;
+
+        var csf = contentGO.AddComponent<ContentSizeFitter>();
+        csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        sidebarScroll.content = contentRT;
+        _tabContent = contentGO.transform;
+
+        // Build tabs
         BuildSpecialTab(STATUS_TAB_ID, "BODY\nSTATUS", ColTabStatus);
-
-        // One tab per body part
         foreach (BodyPart part in System.Enum.GetValues(typeof(BodyPart)))
             BuildBodyPartTab(part);
     }
@@ -219,9 +200,11 @@ public class ModificationStationUI : MonoBehaviour
     private void BuildSpecialTab(string id, string label, Color color)
     {
         var tabGO = MakeRect($"Tab_{id}", _tabContent);
-        tabGO.GetComponent<RectTransform>().sizeDelta = new Vector2(88f, 0f);
-        var img = MakeImage(tabGO, color);
-        _tabImages.Add(img);
+        var tabRT = tabGO.GetComponent<RectTransform>();
+        tabRT.sizeDelta = new Vector2(0f, 60f);
+
+        MakeImage(tabGO, color);
+        _tabImages.Add(tabGO.GetComponent<Image>());
         _tabIds.Add(id);
 
         var btn = tabGO.AddComponent<Button>();
@@ -233,7 +216,7 @@ public class ModificationStationUI : MonoBehaviour
         Stretch(labelGO.GetComponent<RectTransform>(), 4, 4, 4, 4);
         var tmp = labelGO.AddComponent<TextMeshProUGUI>();
         tmp.text = label;
-        tmp.fontSize = 10;
+        tmp.fontSize = 12;
         tmp.fontStyle = FontStyles.Bold;
         tmp.alignment = TextAlignmentOptions.Center;
         tmp.color = Color.white;
@@ -246,9 +229,11 @@ public class ModificationStationUI : MonoBehaviour
     {
         var id = part.ToString();
         var tabGO = MakeRect($"Tab_{id}", _tabContent);
-        tabGO.GetComponent<RectTransform>().sizeDelta = new Vector2(88f, 0f);
-        var img = MakeImage(tabGO, ColTabIdle);
-        _tabImages.Add(img);
+        var tabRT = tabGO.GetComponent<RectTransform>();
+        tabRT.sizeDelta = new Vector2(0f, 50f);
+
+        MakeImage(tabGO, ColTabIdle);
+        _tabImages.Add(tabGO.GetComponent<Image>());
         _tabIds.Add(id);
 
         var btn = tabGO.AddComponent<Button>();
@@ -260,25 +245,38 @@ public class ModificationStationUI : MonoBehaviour
         Stretch(labelGO.GetComponent<RectTransform>(), 4, 4, 4, 4);
         var tmp = labelGO.AddComponent<TextMeshProUGUI>();
         tmp.text = SplitCamel(part.ToString());
-        tmp.fontSize = 10;
+        tmp.fontSize = 13;
+        tmp.fontStyle = FontStyles.Bold;
         tmp.alignment = TextAlignmentOptions.Center;
         tmp.color = Color.white;
-        tmp.textWrappingMode = TextWrappingModes.Normal;
 
         var capturedPart = part;
         btn.onClick.AddListener(() => SelectAugmentTab(capturedPart));
     }
 
-    // ── Augment panel ─────────────────────────────────────────────────────────
+    // ── Right content ─────────────────────────────────────────────────────────
+
+    private void BuildRightContent()
+    {
+        _rightContent = MakeRect("RightContent", _root.transform);
+        var rightRT = _rightContent.GetComponent<RectTransform>();
+        rightRT.anchorMin = new Vector2(0, 0);
+        rightRT.anchorMax = new Vector2(1, 1);
+        rightRT.offsetMin = new Vector2(140, 50);
+        rightRT.offsetMax = new Vector2(0, -50);
+
+        // Augment panel (default visible)
+        BuildAugmentPanel();
+
+        // Status panel (default hidden)
+        BuildStatusPanel();
+    }
 
     private void BuildAugmentPanel()
     {
-        _augmentPanel = MakeRect("AugmentPanel", _root.transform);
+        _augmentPanel = MakeRect("AugmentPanel", _rightContent.transform);
         var rt = _augmentPanel.GetComponent<RectTransform>();
-        rt.anchorMin = new Vector2(0, 0);
-        rt.anchorMax = new Vector2(1, 1);
-        rt.offsetMin = new Vector2(0, 50);
-        rt.offsetMax = new Vector2(0, -104);
+        Stretch(rt, 0, 0, 0, 0);
 
         _listScroll = _augmentPanel.AddComponent<ScrollRect>();
         _listScroll.horizontal = false;
@@ -300,6 +298,7 @@ public class ModificationStationUI : MonoBehaviour
         contentRT.pivot = new Vector2(0.5f, 1f);
         contentRT.offsetMin = Vector2.zero;
         contentRT.offsetMax = Vector2.zero;
+
         var vlg = contentGO.AddComponent<VerticalLayoutGroup>();
         vlg.spacing = 5f;
         vlg.padding = new RectOffset(8, 8, 8, 8);
@@ -307,22 +306,18 @@ public class ModificationStationUI : MonoBehaviour
         vlg.childForceExpandHeight = false;
         vlg.childControlWidth = true;
         vlg.childControlHeight = false;
+
         var csf = contentGO.AddComponent<ContentSizeFitter>();
         csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
         _listScroll.content = contentRT;
         _listContent = contentGO.transform;
     }
 
-    // ── Status panel ──────────────────────────────────────────────────────────
-
     private void BuildStatusPanel()
     {
-        _statusPanel = MakeRect("StatusPanel", _root.transform);
+        _statusPanel = MakeRect("StatusPanel", _rightContent.transform);
         var rt = _statusPanel.GetComponent<RectTransform>();
-        rt.anchorMin = new Vector2(0, 0);
-        rt.anchorMax = new Vector2(1, 1);
-        rt.offsetMin = new Vector2(0, 50);
-        rt.offsetMax = new Vector2(0, -104);
+        Stretch(rt, 0, 0, 0, 0);
 
         _statusScroll = _statusPanel.AddComponent<ScrollRect>();
         _statusScroll.horizontal = false;
@@ -344,6 +339,7 @@ public class ModificationStationUI : MonoBehaviour
         contentRT.pivot = new Vector2(0.5f, 1f);
         contentRT.offsetMin = Vector2.zero;
         contentRT.offsetMax = Vector2.zero;
+
         var vlg = contentGO.AddComponent<VerticalLayoutGroup>();
         vlg.spacing = 6f;
         vlg.padding = new RectOffset(8, 8, 8, 8);
@@ -351,6 +347,7 @@ public class ModificationStationUI : MonoBehaviour
         vlg.childForceExpandHeight = false;
         vlg.childControlWidth = true;
         vlg.childControlHeight = false;
+
         var csf = contentGO.AddComponent<ContentSizeFitter>();
         csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
         _statusScroll.content = contentRT;
@@ -371,13 +368,10 @@ public class ModificationStationUI : MonoBehaviour
         rt.sizeDelta = new Vector2(420f, 180f);
         MakeImage(_confirmOverlay, ColOverlayBg);
 
-        // Border tint
         var border = MakeRect("Border", _confirmOverlay.transform);
         Stretch(border.GetComponent<RectTransform>(), 0, 0, 0, 0);
-        border.AddComponent<Image>().color =
-            new Color(ColTabActive.r, ColTabActive.g, ColTabActive.b, 0.25f);
+        border.AddComponent<Image>().color = new Color(ColTabActive.r, ColTabActive.g, ColTabActive.b, 0.25f);
 
-        // Confirm text
         var ctGO = MakeRect("ConfirmText", _confirmOverlay.transform);
         var ctRT = ctGO.GetComponent<RectTransform>();
         ctRT.anchorMin = new Vector2(0, 1);
@@ -391,7 +385,6 @@ public class ModificationStationUI : MonoBehaviour
         _confirmText.color = Color.white;
         _confirmText.textWrappingMode = TextWrappingModes.Normal;
 
-        // Yes
         var yesGO = MakeRect("YesBtn", _confirmOverlay.transform);
         var yesRT = yesGO.GetComponent<RectTransform>();
         yesRT.anchorMin = new Vector2(0, 0);
@@ -405,7 +398,6 @@ public class ModificationStationUI : MonoBehaviour
         yesBtn.onClick.AddListener(ConfirmInstall);
         MakeBtnLabel(yesGO.transform, "INSTALL", 13);
 
-        // No
         var noGO = MakeRect("NoBtn", _confirmOverlay.transform);
         var noRT = noGO.GetComponent<RectTransform>();
         noRT.anchorMin = new Vector2(0.5f, 0);
@@ -427,7 +419,6 @@ public class ModificationStationUI : MonoBehaviour
     public void Open()
     {
         _root.SetActive(true);
-        // Default to status tab on open so player sees their body state immediately
         SelectStatusTab();
         OnUIOpened?.Invoke();
     }
@@ -448,7 +439,6 @@ public class ModificationStationUI : MonoBehaviour
         _confirmOverlay.SetActive(false);
         _pending = null;
 
-        // Colour all tabs — status tab gets its own colour when active
         for (int i = 0; i < _tabImages.Count; i++)
         {
             if (_tabIds[i] == STATUS_TAB_ID)
@@ -460,7 +450,6 @@ public class ModificationStationUI : MonoBehaviour
         _augmentPanel.SetActive(false);
         _statusPanel.SetActive(true);
 
-        // Build widgets if not yet built
         if (_statusWidgets.Count == 0)
             BuildStatusWidgets();
 
@@ -494,7 +483,6 @@ public class ModificationStationUI : MonoBehaviour
 
     private void BuildStatusWidgets()
     {
-        // Clear any old widgets
         foreach (var w in _statusWidgets)
             if (w.subPartPanel != null) Destroy(w.subPartPanel.transform.parent.gameObject);
         _statusWidgets.Clear();
@@ -507,28 +495,28 @@ public class ModificationStationUI : MonoBehaviour
             var runtimePart = kvp.Value;
             var widget = new StatusBodyPartWidget { bodyPart = kvp.Key };
 
-            // ── Outer container ───────────────────────────────────────────────
             var container = MakeRect($"Status_{kvp.Key}", _statusContent);
             var le = container.AddComponent<LayoutElement>();
             le.flexibleWidth = 1f;
             MakeImage(container, new Color(0.10f, 0.10f, 0.13f, 1f));
+
             var containerVLG = container.AddComponent<VerticalLayoutGroup>();
             containerVLG.spacing = 0f;
             containerVLG.childForceExpandWidth = true;
             containerVLG.childForceExpandHeight = false;
             containerVLG.childControlWidth = true;
             containerVLG.childControlHeight = false;
+
             var containerCSF = container.AddComponent<ContentSizeFitter>();
             containerCSF.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            // ── Header row ────────────────────────────────────────────────────
+            // Header row
             var headerRow = MakeRect("Header", container.transform);
             var headerLE = headerRow.AddComponent<LayoutElement>();
-            headerLE.preferredHeight = 36f;
+            headerLE.preferredHeight = 42f;
             headerLE.flexibleWidth = 1f;
             MakeImage(headerRow, new Color(0.14f, 0.14f, 0.18f, 1f));
 
-            // Toggle button covering header
             widget.toggleBtn = headerRow.AddComponent<Button>();
             var btnCB = widget.toggleBtn.colors;
             btnCB.highlightedColor = new Color(0.22f, 0.22f, 0.28f, 1f);
@@ -536,7 +524,6 @@ public class ModificationStationUI : MonoBehaviour
             var capturedWidget = widget;
             widget.toggleBtn.onClick.AddListener(() => ToggleStatusExpand(capturedWidget));
 
-            // Accent bar on left
             var accent = MakeRect("Accent", headerRow.transform);
             var accentRT = accent.GetComponent<RectTransform>();
             accentRT.anchorMin = new Vector2(0, 0);
@@ -545,30 +532,26 @@ public class ModificationStationUI : MonoBehaviour
             accentRT.offsetMax = new Vector2(4, 0);
             MakeImage(accent, ColTabStatus);
 
-            // Part name label
             var nameGO = MakeRect("Name", headerRow.transform);
             var nameRT = nameGO.GetComponent<RectTransform>();
             nameRT.anchorMin = new Vector2(0, 0);
-            nameRT.anchorMax = new Vector2(0.5f, 1);
+            nameRT.anchorMax = new Vector2(1, 1);
             nameRT.offsetMin = new Vector2(12, 0);
             nameRT.offsetMax = new Vector2(0, 0);
             widget.headerLabel = nameGO.AddComponent<TextMeshProUGUI>();
-            widget.headerLabel.fontSize = 13;
+            widget.headerLabel.fontSize = 16;
             widget.headerLabel.fontStyle = FontStyles.Bold;
             widget.headerLabel.alignment = TextAlignmentOptions.MidlineLeft;
             widget.headerLabel.color = Color.white;
-            widget.headerLabel.textWrappingMode = TextWrappingModes.NoWrap;
 
-            // Condition bar background
             var barBgGO = MakeRect("BarBg", headerRow.transform);
             var barBgRT = barBgGO.GetComponent<RectTransform>();
             barBgRT.anchorMin = new Vector2(0.5f, 0.5f);
             barBgRT.anchorMax = new Vector2(0.95f, 0.5f);
             barBgRT.pivot = new Vector2(0.5f, 0.5f);
-            barBgRT.sizeDelta = new Vector2(0f, 12f);
+            barBgRT.sizeDelta = new Vector2(0f, 16f);
             MakeImage(barBgGO, new Color(0.08f, 0.08f, 0.10f, 1f));
 
-            // Condition bar fill
             var barFillGO = MakeRect("Fill", barBgGO.transform);
             Stretch(barFillGO.GetComponent<RectTransform>(), 0, 0, 0, 0);
             barFillGO.GetComponent<RectTransform>().pivot = new Vector2(0f, 0.5f);
@@ -577,7 +560,7 @@ public class ModificationStationUI : MonoBehaviour
             widget.conditionBar.fillMethod = Image.FillMethod.Horizontal;
             widget.conditionBar.fillOrigin = 0;
 
-            // ── Sub-part panel (collapsed by default) ─────────────────────────
+            // Sub-part panel
             widget.subPartPanel = MakeRect("SubParts", container.transform);
             var spVLG = widget.subPartPanel.AddComponent<VerticalLayoutGroup>();
             spVLG.spacing = 2f;
@@ -586,12 +569,12 @@ public class ModificationStationUI : MonoBehaviour
             spVLG.childForceExpandHeight = false;
             spVLG.childControlWidth = true;
             spVLG.childControlHeight = false;
+
             var spCSF = widget.subPartPanel.AddComponent<ContentSizeFitter>();
             spCSF.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
             var spLE = widget.subPartPanel.AddComponent<LayoutElement>();
             spLE.flexibleWidth = 1f;
 
-            // Build sub-part rows
             foreach (var sp in runtimePart.layers)
                 widget.subWidgets.Add(BuildSubPartWidget(widget.subPartPanel.transform, sp.subPartID, sp.displayName, false));
             foreach (var organ in runtimePart.organs)
@@ -609,47 +592,42 @@ public class ModificationStationUI : MonoBehaviour
     {
         var row = MakeRect($"SP_{id}", parent);
         var rowLE = row.AddComponent<LayoutElement>();
-        rowLE.preferredHeight = 22f;
+        rowLE.preferredHeight = 24f;
         rowLE.flexibleWidth = 1f;
 
-        // Name
         var nameGO = MakeRect("Name", row.transform);
         var nameRT = nameGO.GetComponent<RectTransform>();
         nameRT.anchorMin = new Vector2(0, 0);
-        nameRT.anchorMax = new Vector2(0.38f, 1);
+        nameRT.anchorMax = new Vector2(0.35f, 1);
         nameRT.offsetMin = Vector2.zero;
         nameRT.offsetMax = Vector2.zero;
         var nameTMP = nameGO.AddComponent<TextMeshProUGUI>();
         nameTMP.text = isOrgan ? $"[O] {displayName}" : displayName;
-        nameTMP.fontSize = 11;
+        nameTMP.fontSize = 12;
         nameTMP.alignment = TextAlignmentOptions.MidlineLeft;
         nameTMP.color = isOrgan ? new Color(0.8f, 0.6f, 1f) : new Color(0.75f, 0.75f, 0.75f);
         nameTMP.textWrappingMode = TextWrappingModes.NoWrap;
         nameTMP.overflowMode = TextOverflowModes.Ellipsis;
 
-        // HP label
         var hpGO = MakeRect("HP", row.transform);
         var hpRT = hpGO.GetComponent<RectTransform>();
-        hpRT.anchorMin = new Vector2(0.38f, 0);
-        hpRT.anchorMax = new Vector2(0.58f, 1);
+        hpRT.anchorMin = new Vector2(0.35f, 0);
+        hpRT.anchorMax = new Vector2(0.55f, 1);
         hpRT.offsetMin = Vector2.zero;
         hpRT.offsetMax = Vector2.zero;
         var hpTMP = hpGO.AddComponent<TextMeshProUGUI>();
-        hpTMP.fontSize = 11;
+        hpTMP.fontSize = 12;
         hpTMP.alignment = TextAlignmentOptions.Center;
         hpTMP.color = Color.white;
-        hpTMP.textWrappingMode = TextWrappingModes.NoWrap;
 
-        // Bar background
         var barBgGO = MakeRect("BarBg", row.transform);
         var barBgRT = barBgGO.GetComponent<RectTransform>();
-        barBgRT.anchorMin = new Vector2(0.58f, 0.2f);
+        barBgRT.anchorMin = new Vector2(0.55f, 0.2f);
         barBgRT.anchorMax = new Vector2(1f, 0.8f);
         barBgRT.offsetMin = Vector2.zero;
         barBgRT.offsetMax = Vector2.zero;
         MakeImage(barBgGO, new Color(0.08f, 0.08f, 0.10f, 1f));
 
-        // Bar fill
         var barFillGO = MakeRect("Fill", barBgGO.transform);
         Stretch(barFillGO.GetComponent<RectTransform>(), 0, 0, 0, 0);
         barFillGO.GetComponent<RectTransform>().pivot = new Vector2(0f, 0.5f);
@@ -676,7 +654,6 @@ public class ModificationStationUI : MonoBehaviour
         LayoutRebuilder.ForceRebuildLayoutImmediate(_statusContent.GetComponent<RectTransform>());
     }
 
-    // Called every Update() while status tab is active
     private void RefreshStatusWidgets()
     {
         if (healthManager == null) return;
@@ -688,16 +665,13 @@ public class ModificationStationUI : MonoBehaviour
 
             float ratio = runtimePart.ConditionRatio;
 
-            // Header label + bar
             widget.headerLabel.text = $"{runtimePart.displayName}   {ratio * 100f:F0}%";
             widget.headerLabel.color = ConditionColor(ratio);
             widget.conditionBar.fillAmount = ratio;
             widget.conditionBar.color = ConditionColor(ratio);
 
-            // Sub-part rows — only update if expanded (saves work when collapsed)
             if (!widget.expanded) continue;
 
-            // Build a fast lookup for sub-parts by ID
             var allParts = new Dictionary<string, RuntimeSubPart>();
             foreach (var sp in runtimePart.layers) allParts[sp.subPartID] = sp;
             foreach (var organ in runtimePart.organs) allParts[organ.subPartID] = organ;
@@ -751,7 +725,6 @@ public class ModificationStationUI : MonoBehaviour
         var captured = entry;
         btn.onClick.AddListener(() => RequestInstall(captured));
 
-        // Left accent bar
         var accent = MakeRect("Accent", row.transform);
         var accentRT = accent.GetComponent<RectTransform>();
         accentRT.anchorMin = new Vector2(0, 0);
@@ -760,7 +733,6 @@ public class ModificationStationUI : MonoBehaviour
         accentRT.offsetMax = new Vector2(4, 0);
         MakeImage(accent, ColTabActive);
 
-        // Text block
         var textBlock = MakeRect("TextBlock", row.transform);
         var tbRT = textBlock.GetComponent<RectTransform>();
         tbRT.anchorMin = new Vector2(0, 0);
@@ -841,7 +813,6 @@ public class ModificationStationUI : MonoBehaviour
         _confirmOverlay.SetActive(false);
         PopulateAugmentList(_selectedPart);
 
-        // Rebuild status widgets so new sub-part names and IDs are reflected
         foreach (var w in _statusWidgets)
             if (w.subPartPanel != null)
                 Destroy(w.subPartPanel.transform.parent.gameObject);
@@ -898,18 +869,6 @@ public class ModificationStationUI : MonoBehaviour
         rt.pivot = new Vector2(0.5f, 0f);
         rt.offsetMin = new Vector2(leftPad, fromBottom);
         rt.offsetMax = new Vector2(-rightPad, fromBottom + height);
-    }
-
-    private static void MakeSeparator(Transform parent, float top, float bottom)
-    {
-        var sep = MakeRect("Sep", parent);
-        var sepRT = sep.GetComponent<RectTransform>();
-        sepRT.anchorMin = new Vector2(0, 1);
-        sepRT.anchorMax = new Vector2(1, 1);
-        sepRT.pivot = new Vector2(0.5f, 1f);
-        sepRT.offsetMin = new Vector2(0, bottom);
-        sepRT.offsetMax = new Vector2(0, top);
-        MakeImage(sep, ColSeparator);
     }
 
     private static Image MakeImage(GameObject go, Color color)

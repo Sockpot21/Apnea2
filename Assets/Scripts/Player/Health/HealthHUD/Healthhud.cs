@@ -1,18 +1,6 @@
 ﻿// HealthHUD.cs
-// Collapsible body part condition readout.
-// Attach to a child GameObject of your Canvas.
-//
-// ── Scene setup you need to do ───────────────────────────────────────────────
-// 1. In your Canvas create an empty GameObject, name it "HealthHUD".
-//    Attach this script to it.
-// 2. Inside HealthHUD create a child: Panel → name it "HUDPanel".
-//    Anchor it where you want (e.g. bottom-left). Give it a VerticalLayoutGroup
-//    with spacing 4, Child Force Expand Height OFF.
-// 3. Assign the HUDPanel's RectTransform to the "Hud Panel" field in the Inspector.
-// 4. Assign your PlayerHealth component to the "Player Health" field.
-// 5. Leave "Body Part Entry Prefab" empty for now — this script creates entries
-//    in code. The prefab field is optional if you want to override visuals later.
-// ─────────────────────────────────────────────────────────────────────────────
+// One row per body part: [Name %] [LayerName] [====bar====]
+// Opaque panel background. Bar shrinks left-to-right as health depletes.
 
 using System.Collections.Generic;
 using UnityEngine;
@@ -25,196 +13,214 @@ public class HealthHUD : MonoBehaviour
     [SerializeField] private PlayerHealth playerHealth;
     [SerializeField] private RectTransform hudPanel;
 
-    [Header("Style")]
-    [SerializeField] private Color healthyColor = new Color(0.2f, 0.9f, 0.3f);
-    [SerializeField] private Color damagedColor = new Color(0.9f, 0.8f, 0.1f);
-    [SerializeField] private Color criticalColor = new Color(0.9f, 0.2f, 0.1f);
-    [SerializeField] private Color destroyedColor = new Color(0.4f, 0.4f, 0.4f);
-    [SerializeField] private Color subPartBarColor = new Color(0.3f, 0.6f, 1.0f);
-    [SerializeField] private int headerFontSize = 14;
-    [SerializeField] private int subPartFontSize = 11;
+    [Header("Bar Style")]
+    [SerializeField] private float barWidth = 100f;
+    [SerializeField] private float barHeight = 12f;
+    [SerializeField] private float entrySpacing = 3f;
+    [SerializeField] private float labelWidth = 100f;  // "Head 100%"
+    [SerializeField] private float layerWidth = 50f;   // "Skin"
 
-    // Runtime entry tracking
-    private class BodyPartEntry
+    [Header("Colors")]
+    [SerializeField] private Color panelBgColor = new Color(0.05f, 0.05f, 0.07f, 0.92f);
+    [SerializeField] private Color healthyColor = new Color(0.2f, 0.9f, 0.3f, 1f);
+    [SerializeField] private Color damagedColor = new Color(0.9f, 0.8f, 0.1f, 1f);
+    [SerializeField] private Color criticalColor = new Color(0.9f, 0.2f, 0.1f, 1f);
+    [SerializeField] private Color destroyedColor = new Color(0.4f, 0.4f, 0.4f, 1f);
+    [SerializeField] private Color barFillColor = new Color(0.3f, 0.6f, 1.0f, 1f);
+    [SerializeField] private Color barBgColor = new Color(0.15f, 0.15f, 0.15f, 0.85f);
+    [SerializeField] private int labelFontSize = 12;
+    [SerializeField] private int layerFontSize = 10;
+
+    // ── Runtime ───────────────────────────────────────────────────────────────
+
+    private class Entry
     {
         public BodyPart bodyPart;
         public GameObject root;
-        public Button headerButton;
-        public TextMeshProUGUI headerLabel;
-        public Image conditionBar;
-        public GameObject subPartPanel;
-        public bool isExpanded = false;
-        public List<SubPartWidget> subPartWidgets = new();
+        public TextMeshProUGUI partLabel;
+        public TextMeshProUGUI layerLabel;
+        public Image barFill;
+        public Image barBg;
+        public RectTransform fillRT;
     }
 
-    private class SubPartWidget
-    {
-        public TextMeshProUGUI nameLabel;
-        public TextMeshProUGUI hpLabel;
-        public Image hpBar;
-    }
-
-    private readonly List<BodyPartEntry> _entries = new();
+    private readonly List<Entry> _entries = new();
     private bool _initialised = false;
+    private bool _panelReady = false;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     private void OnEnable()
     {
         if (playerHealth == null) return;
-        playerHealth.OnBodyStateUpdated += HandleBodyStateUpdated;
-        playerHealth.OnBodyPartConditionChanged += HandlePartConditionChanged;
+        playerHealth.OnBodyStateUpdated += OnBodyStateUpdated;
+        playerHealth.OnBodyPartConditionChanged += OnPartChanged;
     }
 
     private void OnDisable()
     {
         if (playerHealth == null) return;
-        playerHealth.OnBodyStateUpdated -= HandleBodyStateUpdated;
-        playerHealth.OnBodyPartConditionChanged -= HandlePartConditionChanged;
+        playerHealth.OnBodyStateUpdated -= OnBodyStateUpdated;
+        playerHealth.OnBodyPartConditionChanged -= OnPartChanged;
     }
 
-    // ── Event handlers ────────────────────────────────────────────────────────
+    // ── Events ────────────────────────────────────────────────────────────────
 
-    private void HandleBodyStateUpdated(Dictionary<BodyPart, BodyPartCondition> body)
+    private void OnBodyStateUpdated(Dictionary<BodyPart, BodyPartCondition> body)
     {
-        // Full rebuild on init or augment swap
         ClearEntries();
+        SetupPanel();
+
         foreach (var kvp in body)
-            CreateEntry(kvp.Value);
+            BuildEntry(kvp.Value);
+
         _initialised = true;
     }
 
-    private void HandlePartConditionChanged(BodyPartCondition condition)
+    private void OnPartChanged(BodyPartCondition condition)
     {
         if (!_initialised) return;
-        foreach (var entry in _entries)
-        {
-            if (entry.bodyPart == condition.bodyPart)
-            {
-                RefreshEntry(entry, condition);
-                return;
-            }
-        }
+        foreach (var e in _entries)
+            if (e.bodyPart == condition.bodyPart) { Refresh(e, condition); return; }
     }
 
-    // ── Entry creation ────────────────────────────────────────────────────────
+    // ── Panel setup (run once) ────────────────────────────────────────────────
 
-    private void CreateEntry(BodyPartCondition condition)
+    private void SetupPanel()
     {
-        var entry = new BodyPartEntry { bodyPart = condition.bodyPart };
+        if (_panelReady) return;
+        _panelReady = true;
 
-        // ── Root container ────────────────────────────────────────────────────
-        entry.root = new GameObject($"Entry_{condition.bodyPart}");
+        // Opaque background
+        var bg = hudPanel.GetComponent<Image>();
+        if (bg == null) bg = hudPanel.gameObject.AddComponent<Image>();
+        bg.color = panelBgColor;
+
+        // Vertical stack of rows
+        var vlg = hudPanel.GetComponent<VerticalLayoutGroup>();
+        if (vlg == null) vlg = hudPanel.gameObject.AddComponent<VerticalLayoutGroup>();
+        vlg.spacing = entrySpacing;
+        vlg.childForceExpandHeight = false;
+        vlg.childForceExpandWidth = false;
+        vlg.childControlHeight = false;
+        vlg.childControlWidth = false;
+        vlg.padding = new RectOffset(8, 8, 6, 6);
+
+        // Shrink panel to fit content
+        var csf = hudPanel.GetComponent<ContentSizeFitter>();
+        if (csf == null) csf = hudPanel.gameObject.AddComponent<ContentSizeFitter>();
+        csf.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+        csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+    }
+
+    // ── Build one row ─────────────────────────────────────────────────────────
+
+    private void BuildEntry(BodyPartCondition condition)
+    {
+        var entry = new Entry { bodyPart = condition.bodyPart };
+
+        float rowWidth = labelWidth + layerWidth + barWidth + 12f; // 12 = two 6px gaps
+
+        // Root row
+        entry.root = new GameObject($"HUD_{condition.bodyPart}");
         entry.root.transform.SetParent(hudPanel, false);
 
-        var rootLayout = entry.root.AddComponent<VerticalLayoutGroup>();
-        rootLayout.spacing = 2f;
-        rootLayout.childForceExpandHeight = false;
-        rootLayout.childForceExpandWidth = true;
+        var rootRT = entry.root.AddComponent<RectTransform>();
+        rootRT.sizeDelta = new Vector2(rowWidth, barHeight + 4f);
 
-        var rootFitter = entry.root.AddComponent<ContentSizeFitter>();
-        rootFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        var hlg = entry.root.AddComponent<HorizontalLayoutGroup>();
+        hlg.childAlignment = TextAnchor.MiddleLeft;
+        hlg.childForceExpandHeight = false;
+        hlg.childForceExpandWidth = false;
+        hlg.childControlHeight = false;
+        hlg.childControlWidth = false;
+        hlg.spacing = 6f;
 
-        // ── Header row ────────────────────────────────────────────────────────
-        var headerRow = MakeRow($"Header_{condition.bodyPart}", entry.root.transform, 28f);
+        // ── Part label ────────────────────────────────────────────────────────
+        var pGO = new GameObject("PartLabel");
+        pGO.transform.SetParent(entry.root.transform, false);
+        var pRT = pGO.AddComponent<RectTransform>();
+        pRT.sizeDelta = new Vector2(labelWidth, barHeight + 4f);
+        entry.partLabel = pGO.AddComponent<TextMeshProUGUI>();
+        entry.partLabel.fontSize = labelFontSize;
+        entry.partLabel.alignment = TextAlignmentOptions.MidlineLeft;
+        entry.partLabel.color = Color.white;
+        entry.partLabel.textWrappingMode = TextWrappingModes.NoWrap;
+        entry.partLabel.overflowMode = TextOverflowModes.Ellipsis;
 
-        entry.headerButton = headerRow.AddComponent<Button>();
-        entry.headerButton.onClick.AddListener(() => ToggleExpand(entry));
+        // ── Layer label ───────────────────────────────────────────────────────
+        var lGO = new GameObject("LayerLabel");
+        lGO.transform.SetParent(entry.root.transform, false);
+        var lRT = lGO.AddComponent<RectTransform>();
+        lRT.sizeDelta = new Vector2(layerWidth, barHeight + 4f);
+        entry.layerLabel = lGO.AddComponent<TextMeshProUGUI>();
+        entry.layerLabel.fontSize = layerFontSize;
+        entry.layerLabel.alignment = TextAlignmentOptions.MidlineLeft;
+        entry.layerLabel.color = Color.gray;
+        entry.layerLabel.textWrappingMode = TextWrappingModes.NoWrap;
+        entry.layerLabel.overflowMode = TextOverflowModes.Ellipsis;
 
-        // Part name + condition %
-        entry.headerLabel = MakeLabel(headerRow.transform, "", headerFontSize, TextAlignmentOptions.MidlineLeft);
+        // ── Bar background ────────────────────────────────────────────────────
+        var bgGO = new GameObject("BarBg");
+        bgGO.transform.SetParent(entry.root.transform, false);
+        var bgRT = bgGO.AddComponent<RectTransform>();
+        bgRT.sizeDelta = new Vector2(barWidth, barHeight);
+        entry.barBg = bgGO.AddComponent<Image>();
+        entry.barBg.color = barBgColor;
 
-        // Condition bar (sits to the right of label)
-        var barBg = MakeBarBackground(headerRow.transform, 80f, 14f);
-        entry.conditionBar = MakeBarFill(barBg.transform);
-
-        // ── Sub-part panel (hidden by default) ───────────────────────────────
-        entry.subPartPanel = new GameObject($"SubParts_{condition.bodyPart}");
-        entry.subPartPanel.transform.SetParent(entry.root.transform, false);
-
-        var subLayout = entry.subPartPanel.AddComponent<VerticalLayoutGroup>();
-        subLayout.spacing = 1f;
-        subLayout.childForceExpandHeight = false;
-        subLayout.childForceExpandWidth = true;
-        subLayout.padding = new RectOffset(12, 0, 0, 0);
-
-        var subFitter = entry.subPartPanel.AddComponent<ContentSizeFitter>();
-        subFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-
-        entry.subPartPanel.SetActive(false);
-
-        // ── Sub-part widgets ──────────────────────────────────────────────────
-        foreach (var sp in condition.subPartConditions)
-        {
-            var row = MakeRow($"SP_{sp.displayName}", entry.subPartPanel.transform, 22f);
-
-            var widget = new SubPartWidget();
-
-            // Name (organ tagged differently)
-            string label = sp.isOrgan ? $"[Organ] {sp.displayName}" : sp.displayName;
-            widget.nameLabel = MakeLabel(row.transform, label, subPartFontSize,
-                                         TextAlignmentOptions.MidlineLeft);
-
-            // HP text
-            widget.hpLabel = MakeLabel(row.transform, "", subPartFontSize,
-                                        TextAlignmentOptions.MidlineRight);
-            ((RectTransform)widget.hpLabel.transform).sizeDelta = new Vector2(80f, 20f);
-
-            // HP bar
-            var subBarBg = MakeBarBackground(row.transform, 70f, 10f);
-            widget.hpBar = MakeBarFill(subBarBg.transform);
-            widget.hpBar.color = subPartBarColor;
-
-            entry.subPartWidgets.Add(widget);
-        }
+        // ── Bar fill — anchored left, width set manually ───────────────────
+        var fGO = new GameObject("Fill");
+        fGO.transform.SetParent(bgGO.transform, false);
+        entry.fillRT = fGO.AddComponent<RectTransform>();
+        entry.fillRT.anchorMin = new Vector2(0f, 0f);
+        entry.fillRT.anchorMax = new Vector2(0f, 1f);
+        entry.fillRT.pivot = new Vector2(0f, 0.5f);
+        entry.fillRT.offsetMin = Vector2.zero;
+        entry.fillRT.offsetMax = new Vector2(barWidth, 0f); // full at start
+        entry.barFill = fGO.AddComponent<Image>();
+        entry.barFill.color = barFillColor;
 
         _entries.Add(entry);
-        RefreshEntry(entry, condition);
+        Refresh(entry, condition);
     }
 
-    private void ToggleExpand(BodyPartEntry entry)
-    {
-        entry.isExpanded = !entry.isExpanded;
-        entry.subPartPanel.SetActive(entry.isExpanded);
-    }
+    // ── Refresh one row ───────────────────────────────────────────────────────
 
-    // ── Refresh (called on every damage event) ────────────────────────────────
-
-    private void RefreshEntry(BodyPartEntry entry, BodyPartCondition condition)
+    private void Refresh(Entry entry, BodyPartCondition condition)
     {
         float ratio = condition.conditionRatio;
+        entry.partLabel.text = $"{condition.displayName} {ratio * 100f:F0}%";
+        entry.partLabel.color = ConditionColor(ratio);
 
-        // Header label
-        entry.headerLabel.text = $"{condition.displayName}  {ratio * 100f:F0}%";
-        entry.headerLabel.color = ConditionColor(ratio);
+        // Outermost non-destroyed sub-part
+        SubPartCondition visible = null;
+        foreach (var sp in condition.subPartConditions)
+            if (!sp.IsDestroyed) { visible = sp; break; }
 
-        // Condition bar
-        entry.conditionBar.fillAmount = ratio;
-        entry.conditionBar.color = ConditionColor(ratio);
+        if (visible == null && condition.subPartConditions.Count > 0)
+            visible = condition.subPartConditions[condition.subPartConditions.Count - 1];
 
-        // Sub-parts
-        int widgetCount = Mathf.Min(entry.subPartWidgets.Count, condition.subPartConditions.Count);
-        for (int i = 0; i < widgetCount; i++)
-        {
-            var widget = entry.subPartWidgets[i];
-            var sp = condition.subPartConditions[i];
-            float spRatio = sp.HealthRatio;
+        if (visible == null) return;
 
-            widget.nameLabel.text = sp.isOrgan ? $"[Organ] {sp.displayName}" : sp.displayName;
-            widget.hpLabel.text = $"{sp.currentHealth:F0} / {sp.maxHealth:F0}";
-            widget.hpBar.fillAmount = spRatio;
-            widget.hpBar.color = sp.IsDestroyed ? destroyedColor : subPartBarColor;
-        }
+        entry.layerLabel.text = visible.isOrgan ? $"[O] {visible.displayName}" : visible.displayName;
+        entry.layerLabel.color = visible.IsDestroyed ? destroyedColor : Color.gray;
+
+        // Shrink fill width
+        entry.fillRT.offsetMax = new Vector2(visible.HealthRatio * barWidth, 0f);
+        entry.barFill.color = visible.IsDestroyed ? destroyedColor : barFillColor;
+        entry.barBg.color = visible.IsDestroyed
+            ? new Color(0.08f, 0.08f, 0.08f, 0.85f)
+            : barBgColor;
     }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private void ClearEntries()
     {
-        foreach (var entry in _entries)
-            if (entry.root != null) Destroy(entry.root);
+        foreach (var e in _entries)
+            if (e.root != null) Destroy(e.root);
         _entries.Clear();
     }
-
-    // ── Color helper ──────────────────────────────────────────────────────────
 
     private Color ConditionColor(float ratio)
     {
@@ -222,93 +228,5 @@ public class HealthHUD : MonoBehaviour
         if (ratio < 0.3f) return criticalColor;
         if (ratio < 0.65f) return damagedColor;
         return healthyColor;
-    }
-
-    // ── UI factory helpers ────────────────────────────────────────────────────
-
-    private static GameObject MakeRow(string name, Transform parent, float height)
-    {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent, false);
-
-        var layout = go.AddComponent<HorizontalLayoutGroup>();
-        layout.childAlignment = TextAnchor.MiddleLeft;
-        layout.childForceExpandHeight = false;
-        layout.childForceExpandWidth = false;
-        layout.spacing = 6f;
-
-        var fitter = go.AddComponent<ContentSizeFitter>();
-        fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
-        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-
-        var rt = go.GetComponent<RectTransform>();
-        rt.sizeDelta = new Vector2(0f, height);
-
-        // Needs an Image for the Button component to receive clicks
-        var img = go.AddComponent<Image>();
-        img.color = new Color(0f, 0f, 0f, 0f);
-
-        return go;
-    }
-
-    private static TextMeshProUGUI MakeLabel(Transform parent, string text,
-                                              int fontSize, TextAlignmentOptions alignment)
-    {
-        var go = new GameObject("Label");
-        go.transform.SetParent(parent, false);
-
-        var rt = go.AddComponent<RectTransform>();
-        rt.sizeDelta = new Vector2(130f, 20f);
-
-        var tmp = go.AddComponent<TextMeshProUGUI>();
-        tmp.text = text;
-        tmp.fontSize = fontSize;
-        tmp.alignment = alignment;
-        tmp.color = Color.white;
-
-        var le = go.AddComponent<LayoutElement>();
-        le.flexibleWidth = 1f;
-
-        return tmp;
-    }
-
-    private static GameObject MakeBarBackground(Transform parent, float width, float height)
-    {
-        var go = new GameObject("BarBg");
-        go.transform.SetParent(parent, false);
-
-        var rt = go.AddComponent<RectTransform>();
-        rt.sizeDelta = new Vector2(width, height);
-
-        var img = go.AddComponent<Image>();
-        img.color = new Color(0.15f, 0.15f, 0.15f, 0.85f);
-
-        var le = go.AddComponent<LayoutElement>();
-        le.preferredWidth = width;
-        le.preferredHeight = height;
-        le.flexibleWidth = 0f;
-
-        return go;
-    }
-
-    private static Image MakeBarFill(Transform parent)
-    {
-        var go = new GameObject("Fill");
-        go.transform.SetParent(parent, false);
-
-        var rt = go.AddComponent<RectTransform>();
-        rt.anchorMin = Vector2.zero;
-        rt.anchorMax = Vector2.one;
-        rt.sizeDelta = Vector2.zero;
-        rt.pivot = new Vector2(0f, 0.5f);
-
-        var img = go.AddComponent<Image>();
-        img.type = Image.Type.Filled;
-        img.fillMethod = Image.FillMethod.Horizontal;
-        img.fillOrigin = 0;
-        img.fillAmount = 1f;
-        img.color = new Color(0.2f, 0.9f, 0.3f);
-
-        return img;
     }
 }

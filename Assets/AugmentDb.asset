@@ -327,7 +327,7 @@ MonoBehaviour:
       isOrgan: 0
       organHitChance: 0
       maxHealth: 60
-      breachThreshold: 18
+      breachThreshold: 12
       resistances:
       - damageType: 0
         multiplier: 1.4
