@@ -1,7 +1,15 @@
 // PlayerInteraction.cs
 // Handles E key interaction (station + item pickup), inventory toggle,
-// and action map / cursor switching.
+// hand use (left/right click), aim (middle click), and action map switching.
 // Attach to the same GameObject as Player.cs.
+//
+// ── Input Action setup required ──────────────────────────────────────────────
+// In your PlayerInput asset, Gameplay action map, add:
+//   UseLeft   → Left Mouse Button  (Button)
+//   UseRight  → Right Mouse Button (Button)
+//   Aim       → Middle Mouse Button (Button)
+// Regenerate the C# class after saving.
+// ─────────────────────────────────────────────────────────────────────────────
 
 using UnityEngine;
 
@@ -13,6 +21,7 @@ public class PlayerInteraction : MonoBehaviour
     [SerializeField] private ModificationStationUI stationUI;
     [SerializeField] private InventoryUI inventoryUI;
     [SerializeField] private PlayerInventory playerInventory;
+    [SerializeField] private PlayerEquipment playerEquipment;
 
     [Header("Interaction")]
     [SerializeField] private float interactionRange = 2.5f;
@@ -33,110 +42,77 @@ public class PlayerInteraction : MonoBehaviour
 
     private void OnEnable()
     {
-        if (stationUI != null)
-        {
-            stationUI.OnUIOpened += HandleUIOpened;
-            stationUI.OnUIClosed += HandleUIClosed;
-        }
-        if (inventoryUI != null)
-        {
-            inventoryUI.OnUIOpened += HandleUIOpened;
-            inventoryUI.OnUIClosed += HandleUIClosed;
-        }
+        if (stationUI != null) { stationUI.OnUIOpened += HandleUIOpened; stationUI.OnUIClosed += HandleUIClosed; }
+        if (inventoryUI != null) { inventoryUI.OnUIOpened += HandleUIOpened; inventoryUI.OnUIClosed += HandleUIClosed; }
     }
 
     private void OnDisable()
     {
-        if (stationUI != null)
-        {
-            stationUI.OnUIOpened -= HandleUIOpened;
-            stationUI.OnUIClosed -= HandleUIClosed;
-        }
-        if (inventoryUI != null)
-        {
-            inventoryUI.OnUIOpened -= HandleUIOpened;
-            inventoryUI.OnUIClosed -= HandleUIClosed;
-        }
+        if (stationUI != null) { stationUI.OnUIOpened -= HandleUIOpened; stationUI.OnUIClosed -= HandleUIClosed; }
+        if (inventoryUI != null) { inventoryUI.OnUIOpened -= HandleUIOpened; inventoryUI.OnUIClosed -= HandleUIClosed; }
     }
 
     private void Update()
     {
         if (_inputActions == null) return;
 
-        // Interact (E key) — only when no UI is open
-        if (!_uiOpen && _inputActions.Gameplay.Interact.WasPressedThisFrame())
-            TryInteract();
+        // ── Gameplay input (only when no UI open) ─────────────────────────────
+        if (!_uiOpen)
+        {
+            if (_inputActions.Gameplay.Interact.WasPressedThisFrame())
+                TryInteract();
 
-        // Inventory toggle
+            if (_inputActions.Gameplay.UseLeft.WasPressedThisFrame())
+                playerEquipment?.UseLeftHand();
+
+            if (_inputActions.Gameplay.UseRight.WasPressedThisFrame())
+                playerEquipment?.UseRightHand();
+
+            if (_inputActions.Gameplay.Aim.WasPressedThisFrame())
+                playerEquipment?.Aim();
+        }
+
+        // Inventory toggle works regardless of other UI state
         if (_inputActions.Gameplay.Inventory.WasPressedThisFrame())
             ToggleInventory();
     }
 
-    // ── Interact (E key) ──────────────────────────────────────────────────────
+    // ── Interact (E) ──────────────────────────────────────────────────────────
 
     private void TryInteract()
     {
         var cam = Camera.main.transform;
-
-        // Cast a ray from the centre of the screen
         var ray = new Ray(cam.position, cam.forward);
 
-        // Check what the ray hits within range
         if (Physics.Raycast(ray, out var hit, interactionRange, interactionMask))
         {
-            // Try pickup first (most common world interaction)
             var pickup = hit.collider.GetComponent<PickupItem>();
-            if (pickup != null)
-            {
-                TryPickup(pickup);
-                return;
-            }
+            if (pickup != null) { TryPickup(pickup); return; }
 
-            // Try modification station
             var station = hit.collider.GetComponent<ModificationStation>();
             if (station != null)
             {
-                // Close inventory if open before opening station
-                if (inventoryUI != null && inventoryUI.IsOpen)
-                    inventoryUI.Close();
-
+                if (inventoryUI != null && inventoryUI.IsOpen) inventoryUI.Close();
                 station.Interact();
                 return;
             }
         }
         else
         {
-            // Raycast missed — fall back to proximity check for station
-            // (station may not have a collider perfectly centred for raycast)
             var station = FindClosestStation(cam.position);
             if (station != null)
             {
-                if (inventoryUI != null && inventoryUI.IsOpen)
-                    inventoryUI.Close();
-
+                if (inventoryUI != null && inventoryUI.IsOpen) inventoryUI.Close();
                 station.Interact();
             }
         }
     }
 
-    // ── Pickup ────────────────────────────────────────────────────────────────
-
     private void TryPickup(PickupItem pickup)
     {
-        if (playerInventory == null)
-        {
-            Debug.LogWarning("[Interact] No PlayerInventory assigned.");
-            return;
-        }
-
-        if (!playerInventory.HasSpace())
-        {
-            Debug.Log("[Interact] Inventory full.");
-            return;
-        }
-
-        var item = pickup.Collect();
-        playerInventory.TryAdd(item);
+        if (playerInventory == null) { Debug.LogWarning("[Interact] No PlayerInventory assigned."); return; }
+        if (!playerInventory.HasSpace()) { Debug.Log("[Interact] Inventory full."); return; }
+        playerInventory.TryAdd(pickup.Collect());
     }
 
     // ── Inventory toggle ──────────────────────────────────────────────────────
@@ -151,10 +127,7 @@ public class PlayerInteraction : MonoBehaviour
         }
         else
         {
-            // Close station UI if open
-            if (stationUI != null && stationUI.IsOpen)
-                stationUI.Close();
-
+            if (stationUI != null && stationUI.IsOpen) stationUI.Close();
             inventoryUI.Open();
         }
     }
@@ -164,7 +137,6 @@ public class PlayerInteraction : MonoBehaviour
     private void TryCloseActiveUI()
     {
         if (!_uiOpen) return;
-
         if (stationUI != null && stationUI.IsOpen) { stationUI.Close(); return; }
         if (inventoryUI != null && inventoryUI.IsOpen) { inventoryUI.Close(); return; }
     }
@@ -182,7 +154,6 @@ public class PlayerInteraction : MonoBehaviour
 
     private void HandleUIClosed()
     {
-        // Only re-enable gameplay if no other UI is still open
         if ((stationUI != null && stationUI.IsOpen) ||
             (inventoryUI != null && inventoryUI.IsOpen))
             return;
@@ -201,7 +172,6 @@ public class PlayerInteraction : MonoBehaviour
         var stations = FindObjectsByType<ModificationStation>(FindObjectsSortMode.None);
         ModificationStation closest = null;
         float minDist = interactionRange;
-
         foreach (var s in stations)
         {
             float d = Vector3.Distance(from, s.transform.position);

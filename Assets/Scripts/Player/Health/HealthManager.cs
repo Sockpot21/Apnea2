@@ -1,5 +1,7 @@
 ﻿// HealthManager.cs
 // DEBUG VERSION: Consolidated combat logging into single report per hit.
+// Supports armour layer insertion/removal via PlayerEquipment.
+// Auto-notifies PlayerEquipment when an armour layer is destroyed.
 
 using UnityEngine;
 using System.Collections.Generic;
@@ -60,13 +62,10 @@ public class RuntimeBodyPart
         {
             var all = new List<RuntimeSubPart>(layers);
             all.AddRange(organs);
-
             if (all.Count == 0) return 0f;
-
             float product = 1f;
             foreach (var sp in all)
                 product *= (sp.maxHealth > 0f ? sp.currentHealth / sp.maxHealth : 0f);
-
             return product;
         }
     }
@@ -78,13 +77,10 @@ public class RuntimeBodyPart
             bodyPart = def.bodyPart,
             displayName = def.displayName
         };
-
         foreach (var sp in def.GetStructuralLayers())
             rt.layers.Add(RuntimeSubPart.FromDefinition(sp));
-
         foreach (var sp in def.GetOrgans())
             rt.organs.Add(RuntimeSubPart.FromDefinition(sp));
-
         return rt;
     }
 }
@@ -136,6 +132,7 @@ public class HealthManager : MonoBehaviour
 
     [Header("References")]
     public PlayerHealth playerHealth;
+    public PlayerEquipment playerEquipment; // for armour destruction callback
 
     private Dictionary<BodyPart, RuntimeBodyPart> _body = new();
     private Dictionary<Collider, BodyPart> _colliderMap = new();
@@ -198,8 +195,43 @@ public class HealthManager : MonoBehaviour
         log.AppendLine("═══════════════════════════════");
         Debug.Log(log.ToString());
 
+        // Write armour layer HP back to its definition and auto-unequip if destroyed
+        CheckArmourDestruction(part, result, log);
+
         playerHealth?.OnDamageReceived(result);
     }
+
+    // ── Armour destruction check ──────────────────────────────────────────────
+
+    private void CheckArmourDestruction(BodyPart part, DamageResult result, StringBuilder log)
+    {
+        if (playerEquipment == null) return;
+
+        var equipped = playerEquipment.GetArmourSlot(part);
+        if (equipped == null || !equipped.IsArmour) return;
+
+        // Find the hit record for the armour layer (it's always the first layer hit if present)
+        foreach (var hit in result.layerHits)
+        {
+            if (hit.displayName == equipped.layerStats.displayName)
+            {
+                if (hit.destroyed)
+                {
+                    log.AppendLine($"\n[ARMOUR] '{equipped.displayName}' destroyed — auto-unequipping.");
+                    StartCoroutine(DeferredUnequipArmour(part));
+                }
+                break;
+            }
+        }
+    }
+
+    private System.Collections.IEnumerator DeferredUnequipArmour(BodyPart part)
+    {
+        yield return null; // wait one frame
+        playerEquipment.UnequipArmour(part);
+    }
+
+    // ── Core damage cascade ───────────────────────────────────────────────────
 
     private void ProcessDamageType(
         RuntimeBodyPart bodyPart,
@@ -211,8 +243,6 @@ public class HealthManager : MonoBehaviour
         log.AppendLine($"\n[CASCADE] {bodyPart.displayName} | {type}");
         log.AppendLine($"Incoming: {incoming}");
 
-        // Organs only roll if the cascade breaches ALL the way through the
-        // innermost structural layer. Track this separately from anyBreach.
         bool innermostLayerBreached = false;
         float spillover = incoming;
         int lastLayerIndex = bodyPart.layers.Count - 1;
@@ -227,7 +257,6 @@ public class HealthManager : MonoBehaviour
             if (layer.IsDestroyed)
             {
                 log.AppendLine("Already destroyed — damage passes through.");
-                // A destroyed layer counts as breached for cascade purposes
                 if (isLast) innermostLayerBreached = true;
                 continue;
             }
@@ -245,20 +274,17 @@ public class HealthManager : MonoBehaviour
 
             if (breached && !isLast)
             {
-                // Breached a non-final layer: absorbs raw incoming, total spills onward
                 hpDamage = spillover;
                 spillover = totalDamage;
                 log.AppendLine("BREACH → spillover continues");
             }
             else
             {
-                // Either not breached, or this is the last layer: cascade stops here
                 hpDamage = totalDamage;
                 spillover = 0f;
 
                 if (breached && isLast)
                 {
-                    // Breached through the innermost structural layer — organs are at risk
                     innermostLayerBreached = true;
                     log.AppendLine("BREACH of innermost layer → organs at risk");
                 }
@@ -285,7 +311,6 @@ public class HealthManager : MonoBehaviour
             if (!breached) break;
         }
 
-        // Only roll for organs if the cascade punched through the innermost layer
         if (innermostLayerBreached && bodyPart.organs.Count > 0)
             ProcessOrganRolls(bodyPart, type, spillover > 0f ? spillover : incoming, result, log);
         else if (bodyPart.organs.Count > 0)
@@ -309,11 +334,7 @@ public class HealthManager : MonoBehaviour
             log.AppendLine($"\n{organ.displayName}");
             log.AppendLine($"Roll: {roll} vs {organ.organHitChance}");
 
-            if (roll > organ.organHitChance)
-            {
-                log.AppendLine("Miss");
-                continue;
-            }
+            if (roll > organ.organHitChance) { log.AppendLine("Miss"); continue; }
 
             float mult = organ.GetMultiplier(type);
             float damage = incoming * mult;
@@ -334,11 +355,12 @@ public class HealthManager : MonoBehaviour
         }
     }
 
+    // ── Augment install / swap ────────────────────────────────────────────────
+
     public void InstallFullAugment(string augmentID)
     {
         var entry = augmentCatalogue?.GetAugment(augmentID);
         if (entry == null || entry.isSubPartAugment) return;
-
         _body[entry.targetBodyPart] = RuntimeBodyPart.FromDefinition(entry.definition);
         Debug.Log($"[HealthManager] Full augment installed: {entry.displayName} → {entry.targetBodyPart}");
         playerHealth?.OnBodyInitialised(_body);
@@ -366,7 +388,6 @@ public class HealthManager : MonoBehaviour
                 return;
             }
         }
-
         for (int i = 0; i < bodyPart.organs.Count; i++)
         {
             if (bodyPart.organs[i].category == entry.targetSubPartCategory)
@@ -377,7 +398,7 @@ public class HealthManager : MonoBehaviour
             }
         }
 
-        Debug.LogWarning($"[HealthManager] No matching sub-part category '{entry.targetSubPartCategory}' in {entry.targetBodyPart}.");
+        Debug.LogWarning($"[HealthManager] No matching sub-part '{entry.targetSubPartCategory}' in {entry.targetBodyPart}.");
     }
 
     public void RegisterCollider(Collider col, BodyPart part) => _colliderMap[col] = part;
