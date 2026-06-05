@@ -1,9 +1,7 @@
 ﻿// CameraFOV.cs
-// Velocity-magnitude-driven FOV. Lerps between baseFOV and sprintFOV based on
-// how fast the player is moving relative to configurable min/max speed thresholds.
-// Uses separate response values for acceleration and deceleration so braking
-// feels distinct from speeding up.
-// Attach to the Camera GameObject. Drag Main Camera into Target Camera in the Inspector.
+// Velocity-driven FOV with aim override.
+// Attach to the Camera GameObject. Drag Main Camera into Target Camera.
+// Call Initialize() in Player.Start() and UpdateFOV() in Player.LateUpdate().
 
 using UnityEngine;
 
@@ -14,27 +12,25 @@ public class CameraFOV : MonoBehaviour
     [SerializeField] private Camera targetCamera;
 
     [Header("FOV Range")]
-    [Tooltip("FOV at or below the low speed threshold.")]
     [SerializeField] private float baseFOV = 60f;
-
-    [Tooltip("FOV at or above the high speed threshold.")]
     [SerializeField] private float sprintFOV = 80f;
 
     [Header("Speed Thresholds")]
-    [Tooltip("Below this speed the FOV stays at baseFOV.")]
     [SerializeField] private float minSpeed = 15f;
-
-    [Tooltip("At or above this speed the FOV reaches sprintFOV.")]
     [SerializeField] private float maxSpeed = 30f;
 
     [Header("Response")]
-    [Tooltip("How quickly the FOV rises when speeding up. Higher = snappier.")]
+    [Tooltip("How quickly FOV rises when speeding up.")]
     [SerializeField] private float fovAccelResponse = 4f;
-
-    [Tooltip("How quickly the FOV drops when slowing down. Higher = snappier.")]
+    [Tooltip("How quickly FOV drops when slowing down.")]
     [SerializeField] private float fovDecelResponse = 8f;
 
+    [Header("Aim")]
+    [Tooltip("How quickly FOV transitions when entering/leaving aim.")]
+    [SerializeField] private float aimResponse = 10f;
+
     private float _currentFOV;
+    private float _targetFOV;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -47,35 +43,42 @@ public class CameraFOV : MonoBehaviour
 
         if (targetCamera == null)
         {
-            Debug.LogError("[CameraFOV] No Camera found. Drag Main Camera into the " +
-                           "Target Camera field on CameraFOV.");
+            Debug.LogError("[CameraFOV] No Camera found. Drag Main Camera into Target Camera.");
             return;
         }
 
         _currentFOV = baseFOV;
+        _targetFOV = baseFOV;
         targetCamera.fieldOfView = _currentFOV;
     }
 
     // ── Called from Player.LateUpdate() ──────────────────────────────────────
 
-    public void UpdateFOV(float deltaTime, Stance stance, Vector3 velocity)
+    /// <summary>
+    /// Pass isAiming and aimFOV from PlayerEquipment.
+    /// When aiming with a ranged weapon the aim FOV overrides velocity-driven FOV.
+    /// </summary>
+    public void UpdateFOV(float deltaTime, Stance stance, Vector3 velocity,
+                          bool isAiming, float aimFOV)
     {
         if (targetCamera == null) return;
 
-        // Derive a 0-1 t value from total velocity magnitude
-        var speed = velocity.magnitude;
-        var t = Mathf.InverseLerp(minSpeed, maxSpeed, speed);
-        var target = Mathf.Lerp(baseFOV, sprintFOV, t);
-
-        // Use faster response when FOV is rising, slower when falling
-        var response = target > _currentFOV ? fovAccelResponse : fovDecelResponse;
-
-        _currentFOV = Mathf.Lerp
-            (
-                a: _currentFOV,
-                b: target,
-                t: 1f - Mathf.Exp(-response * deltaTime)
-            );
+        if (isAiming)
+        {
+            // Aim overrides everything — lerp quickly to weapon's aimFOV
+            _currentFOV = Mathf.Lerp(_currentFOV, aimFOV,
+                1f - Mathf.Exp(-aimResponse * deltaTime));
+        }
+        else
+        {
+            // Velocity-driven FOV
+            var speed = velocity.magnitude;
+            var t = Mathf.InverseLerp(minSpeed, maxSpeed, speed);
+            _targetFOV = Mathf.Lerp(baseFOV, sprintFOV, t);
+            var response = _targetFOV > _currentFOV ? fovAccelResponse : fovDecelResponse;
+            _currentFOV = Mathf.Lerp(_currentFOV, _targetFOV,
+                1f - Mathf.Exp(-response * deltaTime));
+        }
 
         targetCamera.fieldOfView = _currentFOV;
     }

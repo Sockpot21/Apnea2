@@ -18,9 +18,14 @@ MonoBehaviour:
   itemType: 3
   weight: 1
   slotColor: {r: 0.3, g: 0.6, b: 1, a: 1}
+  icon: {fileID: 0}
   worldPrefab: {fileID: 3517323913211894464, guid: 6e946157b39e8ae4994238c0ffe3c3f4, type: 3}
   weaponType: 0
   handedness: 0
+  bulletPrefab: {fileID: 0}
+  bulletSpeed: 30
+  bulletDrop: 0.1
+  aimFOV: 45
   targetBodyPart: 0
   layerStats:
     subPartID: 

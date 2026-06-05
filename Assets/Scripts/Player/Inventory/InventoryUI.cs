@@ -361,10 +361,10 @@ public class InventoryUI : MonoBehaviour
 
         AddTrigger(trigger, EventTriggerType.PointerEnter, _ =>
             capturedBg.color = slotHoverColor);
-        AddTrigger(trigger, EventTriggerType.PointerExit, _ =>
-            capturedBg.color = equipment?.GetHandSlot(capturedHand) != null
-                ? DarkenColor(GetHandItemColor(capturedHand))
-                : slotEmptyColor);
+        //AddTrigger(trigger, EventTriggerType.PointerExit, _ =>
+            //capturedBg.color = equipment?.GetHandSlot(capturedHand) != null       CLAAAAAAUDDEE!!
+                //? DarkenColor(GetHandItemColor(capturedHand))
+                //: slotEmptyColor);
 
         // Right-click to unequip
         AddTrigger(trigger, EventTriggerType.PointerClick, data =>
@@ -737,25 +737,19 @@ public class InventoryUI : MonoBehaviour
         {
             var widget = _gridSlots[i];
             var item = inventory.GetSlot(i);
-            widget.background.color = item != null ? DarkenColor(item.slotColor) : slotEmptyColor;
-            widget.itemColor.color = item != null ? item.slotColor : Color.clear;
+            ApplyItemVisual(widget.background, widget.itemColor, item);
         }
     }
 
     private void RefreshEquipment()
     {
-        // Armour slots
         foreach (var widget in _armourSlots)
         {
             if (widget == null) continue;
             var item = equipment.GetArmourSlot(widget.bodyPart);
-            widget.background.color = item != null
-                ? DarkenColor(item.slotColor) : slotEmptyColor;
-            widget.itemColor.color = item != null
-                ? item.slotColor : Color.clear;
+            ApplyItemVisual(widget.background, widget.itemColor, item);
         }
 
-        // Hand slots
         RefreshHandWidget(_leftHandWidget, HandSlot.Left);
         RefreshHandWidget(_rightHandWidget, HandSlot.Right);
     }
@@ -764,8 +758,38 @@ public class InventoryUI : MonoBehaviour
     {
         if (widget == null) return;
         var item = equipment.GetHandSlot(hand);
-        widget.background.color = item != null ? DarkenColor(GetHandItemColor(hand)) : slotEmptyColor;
-        widget.itemColor.color = item != null ? GetHandItemColor(hand) : Color.clear;
+        ApplyItemVisual(widget.background, widget.itemColor, item);
+    }
+
+    /// <summary>
+    /// Applies icon sprite if available, falls back to slot color tint.
+    /// </summary>
+    private void ApplyItemVisual(Image background, Image itemColor, ItemDefinition item)
+    {
+        if (item == null)
+        {
+            background.color = slotEmptyColor;
+            itemColor.sprite = null;
+            itemColor.color = Color.clear;
+            return;
+        }
+
+        if (item.icon != null)
+        {
+            // Icon mode — neutral background, full-color icon sprite
+            background.color = DarkenColor(item.slotColor);
+            itemColor.sprite = item.icon;
+            itemColor.color = Color.white; // don't tint the sprite
+            itemColor.type = Image.Type.Simple;
+            itemColor.preserveAspect = true;
+        }
+        else
+        {
+            // Color fallback — no icon assigned
+            background.color = DarkenColor(item.slotColor);
+            itemColor.sprite = null;
+            itemColor.color = item.slotColor;
+        }
     }
 
     // ── Open / Close ──────────────────────────────────────────────────────────
@@ -788,12 +812,6 @@ public class InventoryUI : MonoBehaviour
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private Color GetHandItemColor(HandSlot hand)
-    {
-        var item = equipment.GetHandSlot(hand);
-        return item != null ? item.slotColor : Color.clear;
-    }
 
     private static Color DarkenColor(Color c) =>
         new Color(c.r * 0.55f, c.g * 0.55f, c.b * 0.55f, 1f);

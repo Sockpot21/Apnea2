@@ -1,23 +1,106 @@
-// PickupItem.cs
+﻿// PickupItem.cs
 // Attach to any world GameObject to make it a pickup.
-// PlayerInteraction will find it via raycast and call Collect().
+// Prompt label is detached from item transform — immune to Rigidbody rotation.
 
 using UnityEngine;
+using TMPro;
 
 public class PickupItem : MonoBehaviour
 {
     [Header("Item Data")]
-    [Tooltip("The item this pickup represents.")]
-    [SerializeField] public ItemDefinition item;
+    public ItemDefinition item;
 
-    /// <summary>
-    /// Called by PlayerInteraction when the player collects this item.
-    /// Returns the ItemDefinition and destroys the world object.
-    /// </summary>
+    [Header("Prompt Style")]
+    [SerializeField] private float promptVerticalOffset = 1.2f;
+    [SerializeField] private Color promptTextColor = Color.white;
+
+    // Font size is fixed across all pickups — not per-item
+    private const float PromptFontSize = 2f;
+
+    private GameObject _promptRoot;
+    private TextMeshPro _promptLabel;
+    private bool _promptVisible = false;
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    private void Start() => BuildPrompt();
+
+    private void OnDestroy()
+    {
+        if (_promptRoot != null)
+            Destroy(_promptRoot);
+    }
+
+    private void LateUpdate()
+    {
+        if (!_promptVisible || _promptRoot == null) return;
+
+        var cam = Camera.main;
+        if (cam == null) return;
+
+        // Track item position independently of its rotation
+        _promptRoot.transform.position =
+            transform.position + Vector3.up * promptVerticalOffset;
+
+        // Always face camera
+        _promptRoot.transform.rotation =
+            Quaternion.LookRotation(_promptRoot.transform.position - cam.transform.position);
+    }
+
+    // ── Prompt control ────────────────────────────────────────────────────────
+
+    public void ShowPrompt()
+    {
+        if (_promptRoot == null || _promptVisible) return;
+        _promptRoot.SetActive(true);
+        _promptVisible = true;
+    }
+
+    public void HidePrompt()
+    {
+        if (_promptRoot == null || !_promptVisible) return;
+        _promptRoot.SetActive(false);
+        _promptVisible = false;
+    }
+
+    // ── Collect ───────────────────────────────────────────────────────────────
+
     public ItemDefinition Collect()
     {
         var collected = item;
         Destroy(gameObject);
         return collected;
+    }
+
+    public void RefreshPrompt() => UpdatePromptText();
+
+    // ── Build prompt ──────────────────────────────────────────────────────────
+
+    private void BuildPrompt()
+    {
+        _promptRoot = new GameObject($"PickupPrompt_{gameObject.name}");
+        _promptRoot.transform.position =
+            transform.position + Vector3.up * promptVerticalOffset;
+
+        var labelGO = new GameObject("Label");
+        labelGO.transform.SetParent(_promptRoot.transform, false);
+        labelGO.transform.localPosition = Vector3.zero;
+
+        _promptLabel = labelGO.AddComponent<TextMeshPro>();
+        _promptLabel.fontSize = PromptFontSize;
+        _promptLabel.fontStyle = FontStyles.Bold;
+        _promptLabel.color = promptTextColor;
+        _promptLabel.alignment = TextAlignmentOptions.Center;
+        _promptLabel.textWrappingMode = TextWrappingModes.NoWrap;
+        _promptLabel.overflowMode = TextOverflowModes.Ellipsis;
+
+        UpdatePromptText();
+        _promptRoot.SetActive(false);
+    }
+
+    private void UpdatePromptText()
+    {
+        if (_promptLabel == null) return;
+        _promptLabel.text = $"[E]  Pick up  {(item != null ? item.displayName : "Item")}";
     }
 }

@@ -1,8 +1,6 @@
 ﻿// PlayerEquipment.cs
-// Manages all 13 equipment slots at runtime:
-//   - 11 armour slots (one per BodyPart)
-//   - 2 hand slots (left hand, right hand)
-// Integrates with HealthManager to insert/remove armour layers in the damage cascade.
+// Manages all 13 equipment slots (11 armour + 2 hands).
+// Handles shooting for ranged weapons and aim state.
 // Attach to the same Player GameObject as PlayerInventory and HealthManager.
 
 using System.Collections.Generic;
@@ -24,9 +22,26 @@ public class PlayerEquipment : MonoBehaviour
     private ItemDefinition _leftHand;
     private ItemDefinition _rightHand;
 
+    // Muzzle points — found on instantiated weapon prefabs
+    // TODO: when real weapon models are ready, instantiate worldPrefab and
+    // parent it to the appropriate hand bone. Then GetComponentInChildren<WeaponMuzzle>()
+    // will find the muzzle automatically from wherever it was set on the prefab.
+    private WeaponMuzzle _leftMuzzle;
+    private WeaponMuzzle _rightMuzzle;
+
+    // Aim state
+    private bool _isAiming = false;
+
     // ── Events ────────────────────────────────────────────────────────────────
 
     public event System.Action OnEquipmentChanged;
+
+    // Properties read by CameraFOV
+    public bool IsAiming => _isAiming;
+    public float AimFOV => GetAimingWeapon()?.aimFOV ?? 45f;
+    public bool HasRangedWeapon =>
+        (_rightHand != null && _rightHand.IsRanged) ||
+        (_leftHand != null && _leftHand.IsRanged);
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -49,11 +64,6 @@ public class PlayerEquipment : MonoBehaviour
 
     // ── Armour equip / unequip ────────────────────────────────────────────────
 
-    /// <summary>
-    /// Equips an armour item to its target body part slot.
-    /// Inserts a RuntimeSubPart as the outermost layer in the damage cascade.
-    /// If the slot is already occupied the existing piece is unequipped first.
-    /// </summary>
     public bool TryEquipArmour(ItemDefinition item)
     {
         if (!item.IsArmour)
@@ -63,12 +73,11 @@ public class PlayerEquipment : MonoBehaviour
         }
 
         var part = item.targetBodyPart;
-
         if (_armourSlots[part] != null)
             UnequipArmour(part);
 
         var runtimeLayer = RuntimeSubPart.FromDefinition(item.layerStats);
-        runtimeLayer.category = SubPartCategory.Armour; // always index 0, outermost
+        runtimeLayer.category = SubPartCategory.Armour;
 
         var bodyPart = healthManager.GetBodyPart(part);
         if (bodyPart == null)
@@ -78,19 +87,14 @@ public class PlayerEquipment : MonoBehaviour
         }
 
         bodyPart.layers.Insert(0, runtimeLayer);
-
         _armourSlots[part] = item;
         _armourLayers[part] = runtimeLayer;
 
-        Debug.Log($"[Equipment] Armour equipped: '{item.displayName}' → {part} (layer 0).");
+        Debug.Log($"[Equipment] Armour equipped: '{item.displayName}' → {part}.");
         OnEquipmentChanged?.Invoke();
         return true;
     }
 
-    /// <summary>
-    /// Unequips armour from the given body part and returns it to inventory.
-    /// If the armour was destroyed (HP = 0) it is returned as a broken item.
-    /// </summary>
     public void UnequipArmour(BodyPart part)
     {
         if (_armourSlots[part] == null) return;
@@ -103,9 +107,8 @@ public class PlayerEquipment : MonoBehaviour
             bool destroyed = layer.IsDestroyed;
             bodyPart.layers.Remove(layer);
             _armourLayers.Remove(part);
-
             Debug.Log(destroyed
-                ? $"[Equipment] '{item.displayName}' was destroyed — returned broken."
+                ? $"[Equipment] '{item.displayName}' destroyed — returned broken."
                 : $"[Equipment] '{item.displayName}' unequipped from {part}.");
         }
 
@@ -119,10 +122,6 @@ public class PlayerEquipment : MonoBehaviour
 
     // ── Hand equip / unequip ──────────────────────────────────────────────────
 
-    /// <summary>
-    /// Equips a weapon or consumable to the specified hand slot.
-    /// Two-handed items occupy both slots; displaces existing items back to inventory.
-    /// </summary>
     public bool TryEquipHand(ItemDefinition item, HandSlot hand)
     {
         if (!item.IsWeapon && !item.IsConsumable)
@@ -135,16 +134,16 @@ public class PlayerEquipment : MonoBehaviour
         {
             if (_leftHand != null) ReturnHandItemToInventory(HandSlot.Left);
             if (_rightHand != null) ReturnHandItemToInventory(HandSlot.Right);
-
             _leftHand = item;
             _rightHand = item;
-
-            Debug.Log($"[Equipment] Two-handed '{item.displayName}' equipped in both hands.");
+            RefreshMuzzle(HandSlot.Left);
+            RefreshMuzzle(HandSlot.Right);
+            Debug.Log($"[Equipment] Two-handed '{item.displayName}' equipped.");
             OnEquipmentChanged?.Invoke();
             return true;
         }
 
-        // One-handed: if other hand holds a two-handed weapon, clear both first
+        // If other hand holds a two-handed weapon, clear both first
         var otherHand = hand == HandSlot.Left ? HandSlot.Right : HandSlot.Left;
         var otherHandItem = GetHandSlot(otherHand);
         if (otherHandItem != null && otherHandItem.IsTwoHanded)
@@ -161,6 +160,8 @@ public class PlayerEquipment : MonoBehaviour
         if (hand == HandSlot.Left) _leftHand = item;
         else _rightHand = item;
 
+        RefreshMuzzle(hand);
+
         Debug.Log($"[Equipment] '{item.displayName}' equipped in {hand} hand.");
         OnEquipmentChanged?.Invoke();
         return true;
@@ -171,9 +172,21 @@ public class PlayerEquipment : MonoBehaviour
         var item = GetHandSlot(hand);
         if (item == null) return;
 
-        if (item.IsTwoHanded) { _leftHand = null; _rightHand = null; }
-        else if (hand == HandSlot.Left) _leftHand = null;
-        else _rightHand = null;
+        if (item.IsTwoHanded)
+        {
+            _leftHand = null;
+            _rightHand = null;
+            _leftMuzzle = null;
+            _rightMuzzle = null;
+        }
+        else
+        {
+            if (hand == HandSlot.Left) { _leftHand = null; _leftMuzzle = null; }
+            else { _rightHand = null; _rightMuzzle = null; }
+        }
+
+        // Cancel aim if no ranged weapon remains
+        if (!HasRangedWeapon) _isAiming = false;
 
         if (!inventory.TryAdd(item))
             Debug.LogWarning($"[Equipment] Inventory full — could not return '{item.displayName}'.");
@@ -187,29 +200,113 @@ public class PlayerEquipment : MonoBehaviour
     public void UseLeftHand()
     {
         if (_leftHand == null) return;
-        Debug.Log(_leftHand.IsConsumable
-            ? $"[Equipment] Used consumable: '{_leftHand.displayName}' (left hand)."
-            : $"[Equipment] Attacked with: '{_leftHand.displayName}' (left hand).");
+        if (_leftHand.IsRanged) Fire(HandSlot.Left);
+        else if (_leftHand.IsWeapon)
+            Debug.Log($"[Equipment] Melee attack: '{_leftHand.displayName}' (left). TODO: melee system.");
+        else if (_leftHand.IsConsumable)
+            Debug.Log($"[Equipment] Used consumable: '{_leftHand.displayName}' (left).");
     }
 
     public void UseRightHand()
     {
         if (_rightHand == null) return;
-        Debug.Log(_rightHand.IsConsumable
-            ? $"[Equipment] Used consumable: '{_rightHand.displayName}' (right hand)."
-            : $"[Equipment] Attacked with: '{_rightHand.displayName}' (right hand).");
+        if (_rightHand.IsRanged) Fire(HandSlot.Right);
+        else if (_rightHand.IsWeapon)
+            Debug.Log($"[Equipment] Melee attack: '{_rightHand.displayName}' (right). TODO: melee system.");
+        else if (_rightHand.IsConsumable)
+            Debug.Log($"[Equipment] Used consumable: '{_rightHand.displayName}' (right).");
     }
 
-    public void Aim()
+    // ── Aim toggle ────────────────────────────────────────────────────────────
+
+    public void ToggleAim()
     {
-        var weapon = _rightHand ?? _leftHand;
-        if (weapon == null || !weapon.IsWeapon) return;
-        Debug.Log(weapon.weaponType == WeaponType.Ranged
-            ? $"[Equipment] Aiming '{weapon.displayName}'."
-            : "[Equipment] Aim: no ranged weapon equipped.");
+        if (!HasRangedWeapon)
+        {
+            _isAiming = false;
+            return;
+        }
+        _isAiming = !_isAiming;
+        Debug.Log($"[Equipment] Aim: {(_isAiming ? "ON" : "OFF")}");
+    }
+
+    // ── Shooting ──────────────────────────────────────────────────────────────
+
+    private void Fire(HandSlot hand)
+    {
+        var weapon = hand == HandSlot.Left ? _leftHand : _rightHand;
+        if (weapon == null || !weapon.IsRanged) return;
+
+        if (weapon.bulletPrefab == null)
+        {
+            Debug.LogWarning($"[Equipment] '{weapon.displayName}' has no bulletPrefab assigned.");
+            return;
+        }
+
+        // Determine spawn position and direction
+        Vector3 spawnPos;
+        Vector3 spawnDir;
+
+        var muzzle = hand == HandSlot.Left ? _leftMuzzle : _rightMuzzle;
+        if (muzzle != null)
+        {
+            spawnPos = muzzle.transform.position;
+            spawnDir = muzzle.transform.forward;
+        }
+        else
+        {
+            // Fallback: spawn from screen centre ray
+            // TODO: replace with muzzle point once weapon models are parented to hands
+            var cam = Camera.main;
+            var ray = cam.ScreenPointToRay(
+                new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f));
+            spawnPos = ray.origin + ray.direction * 0.5f;
+            spawnDir = ray.direction;
+        }
+
+        var bulletGO = Instantiate(weapon.bulletPrefab, spawnPos, Quaternion.LookRotation(spawnDir));
+        var bullet = bulletGO.GetComponent<Bullet>();
+
+        if (bullet == null)
+        {
+            Debug.LogWarning($"[Equipment] bulletPrefab '{weapon.bulletPrefab.name}' " +
+                             $"has no Bullet component.");
+            Destroy(bulletGO);
+            return;
+        }
+
+        bullet.speed = weapon.bulletSpeed;
+        bullet.drop = weapon.bulletDrop;
+        bullet.Launch(spawnDir);
+
+        Debug.Log($"[Equipment] Fired '{weapon.displayName}' from {hand} hand.");
+    }
+
+    // ── Muzzle refresh ────────────────────────────────────────────────────────
+
+    // TODO: when weapon models are instantiated and parented to hand bones,
+    // call RefreshMuzzle(hand) after instantiation to pick up the WeaponMuzzle
+    // component from the model hierarchy automatically.
+    private void RefreshMuzzle(HandSlot hand)
+    {
+        // For now muzzle is null until a weapon model is parented.
+        // When the model is instantiated call:
+        //   var instance = Instantiate(item.worldPrefab, handBoneTransform);
+        //   var muzzle = instance.GetComponentInChildren<WeaponMuzzle>();
+        //   if (hand == HandSlot.Left) _leftMuzzle = muzzle;
+        //   else _rightMuzzle = muzzle;
+        if (hand == HandSlot.Left) _leftMuzzle = null;
+        else _rightMuzzle = null;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private ItemDefinition GetAimingWeapon()
+    {
+        if (_rightHand != null && _rightHand.IsRanged) return _rightHand;
+        if (_leftHand != null && _leftHand.IsRanged) return _leftHand;
+        return null;
+    }
 
     private void ReturnHandItemToInventory(HandSlot hand)
     {

@@ -14,6 +14,8 @@ public class Player : MonoBehaviour
     [SerializeField] private Volume volume;
     [SerializeField] private StanceVinette stanceVignette;
     [SerializeField] private HealthManager healthManager;
+    [SerializeField] private PlayerEquipment playerEquipment;
+
     private PlayerInput _inputActions;
 
     void Start()
@@ -42,11 +44,9 @@ public class Player : MonoBehaviour
         var input = _inputActions.Gameplay;
         var deltaTime = Time.deltaTime;
 
-        // Camera rotation
         var cameraInput = new CameraInput { Look = input.Look.ReadValue<Vector2>() };
         playerCamera.UpdateRotation(cameraInput);
 
-        // Character input
         var characterInput = new CharacterInput
         {
             Rotation = playerCamera.transform.rotation,
@@ -79,14 +79,14 @@ public class Player : MonoBehaviour
 
         playerCamera.UpdatePosition(cameraTarget);
         cameraSpring.UpdateSpring(deltaTime, cameraTarget.up);
-        cameraLean.UpdateLean
-            (
-                deltaTime,
-                state.Stance is Stance.Slide,
-                state.Acceloration,
-                cameraTarget.up
-            );
-        cameraFOV.UpdateFOV(deltaTime, state.Stance, state.Velocity);
+        cameraLean.UpdateLean(deltaTime, state.Stance is Stance.Slide,
+            state.Acceloration, cameraTarget.up);
+
+        // Pass aim state from PlayerEquipment into CameraFOV
+        bool isAiming = playerEquipment != null && playerEquipment.IsAiming;
+        float aimFOV = playerEquipment != null ? playerEquipment.AimFOV : 45f;
+        cameraFOV.UpdateFOV(deltaTime, state.Stance, state.Velocity, isAiming, aimFOV);
+
         stanceVignette.UpdateVignette(deltaTime, state.Stance);
     }
 
