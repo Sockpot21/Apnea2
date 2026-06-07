@@ -1,54 +1,54 @@
-﻿// Bullet.cs
-// Attach to your bullet prefab.
-// Travels at bulletSpeed and drops due to gravity scaled by bulletDrop.
-// Destroys itself on collision or after lifetime expires.
+// Bullet.cs
+// Pure vector-based bullet. No Rigidbody needed on the prefab.
+// Stats are set by PlayerEquipment after instantiation.
+// Attach this to your bullet prefab.
 
 using UnityEngine;
 
 public class Bullet : MonoBehaviour
 {
-    [Header("Set by PlayerEquipment on spawn — do not set manually")]
-    public float speed = 30f;
-    public float drop = 1f;   // gravity scale: 0 = no drop, 1 = full gravity
-    public float lifetime = 5f;
+    // Set by PlayerEquipment after Instantiate
+    [HideInInspector] public float speed = 30f;
+    [HideInInspector] public float drop = 9.81f; // units/s� downward acceleration
+    [HideInInspector] public float lifetime = 5f;    // 0 = never despawn
 
     private Vector3 _velocity;
     private float _elapsed;
 
-    // ── Called by PlayerEquipment immediately after Instantiate ───────────────
-
-    public void Launch(Vector3 direction)
+    public void Launch(Vector3 direction, Vector3 inheritedVelocity)
     {
-        _velocity = direction.normalized * speed;
+        // Inherit the shooter's velocity so bullets feel natural when moving
+        _velocity = direction.normalized * speed + inheritedVelocity;
         _elapsed = 0f;
     }
 
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
-
     private void Update()
     {
-        _elapsed += Time.deltaTime;
-        if (_elapsed >= lifetime) { Destroy(gameObject); return; }
+        float dt = Time.deltaTime;
 
-        // Apply bullet drop (scaled gravity)
-        _velocity += Physics.gravity * drop * Time.deltaTime;
+        // Lifetime check � 0 means never despawn
+        if (lifetime > 0f)
+        {
+            _elapsed += dt;
+            if (_elapsed >= lifetime) { Destroy(gameObject); return; }
+        }
 
-        // Move
-        var delta = _velocity * Time.deltaTime;
+        // Apply bullet drop (pure downward acceleration, independent of physics)
+        _velocity += Vector3.down * drop * dt;
 
-        // Sweep with a raycast so fast bullets don't tunnel through thin objects
+        // Sweep raycast so fast bullets don't tunnel through thin geometry
+        var delta = _velocity * dt;
         if (Physics.Raycast(transform.position, delta.normalized, out var hit, delta.magnitude))
         {
             Debug.Log($"[Bullet] Hit: {hit.collider.name}");
-            // TODO: call hit.collider.GetComponent<HealthManager>()?.ReceiveDamage(...)
-            // when damage is wired up
+            // TODO: call HealthManager.ReceiveDamage when damage system is wired up
             Destroy(gameObject);
             return;
         }
 
         transform.position += delta;
 
-        // Orient bullet along travel direction
+        // Orient along travel direction
         if (_velocity.sqrMagnitude > 0.01f)
             transform.rotation = Quaternion.LookRotation(_velocity);
     }

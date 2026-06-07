@@ -224,10 +224,11 @@ public class PlayerEquipment : MonoBehaviour
         if (!HasRangedWeapon)
         {
             _isAiming = false;
+            Debug.Log("[Equipment] ToggleAim: no ranged weapon equipped.");
             return;
         }
         _isAiming = !_isAiming;
-        Debug.Log($"[Equipment] Aim: {(_isAiming ? "ON" : "OFF")}");
+        Debug.Log($"[Equipment] Aim: {(_isAiming ? "ON" : "OFF")} | aimFOV: {AimFOV}");
     }
 
     // ── Shooting ──────────────────────────────────────────────────────────────
@@ -243,7 +244,7 @@ public class PlayerEquipment : MonoBehaviour
             return;
         }
 
-        // Determine spawn position and direction
+        // Spawn position and direction
         Vector3 spawnPos;
         Vector3 spawnDir;
 
@@ -255,31 +256,45 @@ public class PlayerEquipment : MonoBehaviour
         }
         else
         {
-            // Fallback: spawn from screen centre ray
-            // TODO: replace with muzzle point once weapon models are parented to hands
+            // Fallback: screen centre ray until weapon models are parented to hands
             var cam = Camera.main;
+            if (cam == null) { Debug.LogWarning("[Equipment] No main camera."); return; }
             var ray = cam.ScreenPointToRay(
                 new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f));
             spawnPos = ray.origin + ray.direction * 0.5f;
             spawnDir = ray.direction;
         }
 
-        var bulletGO = Instantiate(weapon.bulletPrefab, spawnPos, Quaternion.LookRotation(spawnDir));
-        var bullet = bulletGO.GetComponent<Bullet>();
+        var bulletGO = Instantiate(weapon.bulletPrefab, spawnPos,
+                                   Quaternion.LookRotation(spawnDir));
 
+        var bullet = bulletGO.GetComponent<Bullet>();
         if (bullet == null)
         {
             Debug.LogWarning($"[Equipment] bulletPrefab '{weapon.bulletPrefab.name}' " +
-                             $"has no Bullet component.");
+                             $"needs a Bullet component.");
             Destroy(bulletGO);
             return;
         }
 
+        // Inherit the player's current velocity so bullets feel natural at any speed
+        var playerRb = GetComponent<Rigidbody>();
+        var inheritedVel = playerRb != null ? playerRb.linearVelocity : Vector3.zero;
+        // If no Rigidbody (KCC), read velocity from PlayerCharacter state
+        if (playerRb == null)
+        {
+            var pc = GetComponent<PlayerCharacter>();
+            if (pc != null) inheritedVel = pc.GetState().Velocity;
+        }
+
         bullet.speed = weapon.bulletSpeed;
         bullet.drop = weapon.bulletDrop;
-        bullet.Launch(spawnDir);
+        bullet.lifetime = weapon.bulletLifetime;
+        bullet.Launch(spawnDir, inheritedVel);
 
-        Debug.Log($"[Equipment] Fired '{weapon.displayName}' from {hand} hand.");
+        Debug.Log($"[Equipment] Fired '{weapon.displayName}' — " +
+                  $"speed: {weapon.bulletSpeed}, drop: {weapon.bulletDrop}, " +
+                  $"lifetime: {(weapon.bulletLifetime <= 0f ? "∞" : weapon.bulletLifetime + "s")}");
     }
 
     // ── Muzzle refresh ────────────────────────────────────────────────────────

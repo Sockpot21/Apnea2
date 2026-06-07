@@ -69,6 +69,8 @@ public class ItemDefinitionEditor : Editor
             EditorGUILayout.PropertyField(serializedObject.FindProperty("bulletPrefab"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("bulletSpeed"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("bulletDrop"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("bulletLifetime"));
+            EditorGUILayout.HelpBox("Lifetime: 0 = bullet never despawns.", MessageType.None);
             EditorGUILayout.PropertyField(serializedObject.FindProperty("aimFOV"));
         }
         else

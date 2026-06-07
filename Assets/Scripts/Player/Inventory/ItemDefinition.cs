@@ -61,8 +61,11 @@ public class ItemDefinition : ScriptableObject
     [Tooltip("Initial speed of the bullet in units per second.")]
     public float bulletSpeed = 30f;
 
-    [Tooltip("Gravity scale applied to the bullet. 0 = no drop, 1 = full gravity.")]
-    public float bulletDrop = 0.1f;
+    [Tooltip("Downward acceleration applied to the bullet in units/s². 0 = no drop.")]
+    public float bulletDrop = 9.81f;
+
+    [Tooltip("How long in seconds before the bullet despawns. 0 = never despawn.")]
+    public float bulletLifetime = 5f;
 
     [Tooltip("FOV when aiming down sights. Only applied when aiming with this weapon.")]
     public float aimFOV = 45f;

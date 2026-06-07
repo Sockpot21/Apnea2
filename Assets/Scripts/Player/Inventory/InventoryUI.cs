@@ -361,10 +361,10 @@ public class InventoryUI : MonoBehaviour
 
         AddTrigger(trigger, EventTriggerType.PointerEnter, _ =>
             capturedBg.color = slotHoverColor);
-        //AddTrigger(trigger, EventTriggerType.PointerExit, _ =>
-            //capturedBg.color = equipment?.GetHandSlot(capturedHand) != null       CLAAAAAAUDDEE!!
-                //? DarkenColor(GetHandItemColor(capturedHand))
-                //: slotEmptyColor);
+        AddTrigger(trigger, EventTriggerType.PointerExit, _ =>
+            capturedBg.color = equipment?.GetHandSlot(capturedHand) != null
+                ? DarkenColor(equipment.GetHandSlot(capturedHand).slotColor)
+                : slotEmptyColor);
 
         // Right-click to unequip
         AddTrigger(trigger, EventTriggerType.PointerClick, data =>

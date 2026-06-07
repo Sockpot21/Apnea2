@@ -83,9 +83,16 @@ public class Player : MonoBehaviour
             state.Acceloration, cameraTarget.up);
 
         // Pass aim state from PlayerEquipment into CameraFOV
-        bool isAiming = playerEquipment != null && playerEquipment.IsAiming;
-        float aimFOV = playerEquipment != null ? playerEquipment.AimFOV : 45f;
-        cameraFOV.UpdateFOV(deltaTime, state.Stance, state.Velocity, isAiming, aimFOV);
+        if (playerEquipment == null)
+        {
+            Debug.LogError("[Player] PlayerEquipment is not assigned in the Inspector!");
+            cameraFOV.UpdateFOV(deltaTime, state.Stance, state.Velocity, false, 45f);
+        }
+        else
+        {
+            cameraFOV.UpdateFOV(deltaTime, state.Stance, state.Velocity,
+                                playerEquipment.IsAiming, playerEquipment.AimFOV);
+        }
 
         stanceVignette.UpdateVignette(deltaTime, state.Stance);
     }

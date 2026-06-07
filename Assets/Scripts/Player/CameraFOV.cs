@@ -65,7 +65,7 @@ public class CameraFOV : MonoBehaviour
 
         if (isAiming)
         {
-            // Aim overrides everything — lerp quickly to weapon's aimFOV
+            Debug.Log($"[CameraFOV] Aiming — target FOV: {aimFOV}, current: {_currentFOV:F1}");
             _currentFOV = Mathf.Lerp(_currentFOV, aimFOV,
                 1f - Mathf.Exp(-aimResponse * deltaTime));
         }
