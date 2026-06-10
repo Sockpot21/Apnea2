@@ -181,6 +181,42 @@ public partial class @PlayerInput: IInputActionCollection2, IDisposable
                     ""processors"": """",
                     ""interactions"": """",
                     ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Prone"",
+                    ""type"": ""Button"",
+                    ""id"": ""946ee349-61a5-4fac-afa7-8aa01ce67e77"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Grapple"",
+                    ""type"": ""Button"",
+                    ""id"": ""2f69062c-f295-4a62-a18d-8bbdaeb87b35"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""GrappleAscend"",
+                    ""type"": ""Button"",
+                    ""id"": ""e21dff89-362e-4ffd-8941-81287607a26b"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""GrappleDescend"",
+                    ""type"": ""Button"",
+                    ""id"": ""7a89c2c2-cdf3-4d02-9a4f-84a63afc6eef"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
                 }
             ],
             ""bindings"": [
@@ -348,6 +384,50 @@ public partial class @PlayerInput: IInputActionCollection2, IDisposable
                     ""action"": ""Aim"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""8fd929e6-90f2-4b9d-b33c-035b9aee6e2d"",
+                    ""path"": ""<Keyboard>/z"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Prone"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""932e637b-11a3-4dff-9890-249664d11553"",
+                    ""path"": ""<Keyboard>/f"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Grapple"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""1609fed6-acec-4b72-b123-615e2245d968"",
+                    ""path"": ""<Mouse>/forwardButton"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""GrappleAscend"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""e8d414b0-0675-4250-9e79-fe0e3f1cba9e"",
+                    ""path"": ""<Mouse>/backButton"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""GrappleDescend"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
                 }
             ]
         },
@@ -394,6 +474,10 @@ public partial class @PlayerInput: IInputActionCollection2, IDisposable
         m_Gameplay_UseLeft = m_Gameplay.FindAction("UseLeft", throwIfNotFound: true);
         m_Gameplay_UseRight = m_Gameplay.FindAction("UseRight", throwIfNotFound: true);
         m_Gameplay_Aim = m_Gameplay.FindAction("Aim", throwIfNotFound: true);
+        m_Gameplay_Prone = m_Gameplay.FindAction("Prone", throwIfNotFound: true);
+        m_Gameplay_Grapple = m_Gameplay.FindAction("Grapple", throwIfNotFound: true);
+        m_Gameplay_GrappleAscend = m_Gameplay.FindAction("GrappleAscend", throwIfNotFound: true);
+        m_Gameplay_GrappleDescend = m_Gameplay.FindAction("GrappleDescend", throwIfNotFound: true);
         // UI
         m_UI = asset.FindActionMap("UI", throwIfNotFound: true);
         m_UI_Close = m_UI.FindAction("Close", throwIfNotFound: true);
@@ -488,6 +572,10 @@ public partial class @PlayerInput: IInputActionCollection2, IDisposable
     private readonly InputAction m_Gameplay_UseLeft;
     private readonly InputAction m_Gameplay_UseRight;
     private readonly InputAction m_Gameplay_Aim;
+    private readonly InputAction m_Gameplay_Prone;
+    private readonly InputAction m_Gameplay_Grapple;
+    private readonly InputAction m_Gameplay_GrappleAscend;
+    private readonly InputAction m_Gameplay_GrappleDescend;
     /// <summary>
     /// Provides access to input actions defined in input action map "Gameplay".
     /// </summary>
@@ -539,6 +627,22 @@ public partial class @PlayerInput: IInputActionCollection2, IDisposable
         /// Provides access to the underlying input action "Gameplay/Aim".
         /// </summary>
         public InputAction @Aim => m_Wrapper.m_Gameplay_Aim;
+        /// <summary>
+        /// Provides access to the underlying input action "Gameplay/Prone".
+        /// </summary>
+        public InputAction @Prone => m_Wrapper.m_Gameplay_Prone;
+        /// <summary>
+        /// Provides access to the underlying input action "Gameplay/Grapple".
+        /// </summary>
+        public InputAction @Grapple => m_Wrapper.m_Gameplay_Grapple;
+        /// <summary>
+        /// Provides access to the underlying input action "Gameplay/GrappleAscend".
+        /// </summary>
+        public InputAction @GrappleAscend => m_Wrapper.m_Gameplay_GrappleAscend;
+        /// <summary>
+        /// Provides access to the underlying input action "Gameplay/GrappleDescend".
+        /// </summary>
+        public InputAction @GrappleDescend => m_Wrapper.m_Gameplay_GrappleDescend;
         /// <summary>
         /// Provides access to the underlying input action map instance.
         /// </summary>
@@ -595,6 +699,18 @@ public partial class @PlayerInput: IInputActionCollection2, IDisposable
             @Aim.started += instance.OnAim;
             @Aim.performed += instance.OnAim;
             @Aim.canceled += instance.OnAim;
+            @Prone.started += instance.OnProne;
+            @Prone.performed += instance.OnProne;
+            @Prone.canceled += instance.OnProne;
+            @Grapple.started += instance.OnGrapple;
+            @Grapple.performed += instance.OnGrapple;
+            @Grapple.canceled += instance.OnGrapple;
+            @GrappleAscend.started += instance.OnGrappleAscend;
+            @GrappleAscend.performed += instance.OnGrappleAscend;
+            @GrappleAscend.canceled += instance.OnGrappleAscend;
+            @GrappleDescend.started += instance.OnGrappleDescend;
+            @GrappleDescend.performed += instance.OnGrappleDescend;
+            @GrappleDescend.canceled += instance.OnGrappleDescend;
         }
 
         /// <summary>
@@ -636,6 +752,18 @@ public partial class @PlayerInput: IInputActionCollection2, IDisposable
             @Aim.started -= instance.OnAim;
             @Aim.performed -= instance.OnAim;
             @Aim.canceled -= instance.OnAim;
+            @Prone.started -= instance.OnProne;
+            @Prone.performed -= instance.OnProne;
+            @Prone.canceled -= instance.OnProne;
+            @Grapple.started -= instance.OnGrapple;
+            @Grapple.performed -= instance.OnGrapple;
+            @Grapple.canceled -= instance.OnGrapple;
+            @GrappleAscend.started -= instance.OnGrappleAscend;
+            @GrappleAscend.performed -= instance.OnGrappleAscend;
+            @GrappleAscend.canceled -= instance.OnGrappleAscend;
+            @GrappleDescend.started -= instance.OnGrappleDescend;
+            @GrappleDescend.performed -= instance.OnGrappleDescend;
+            @GrappleDescend.canceled -= instance.OnGrappleDescend;
         }
 
         /// <summary>
@@ -842,6 +970,34 @@ public partial class @PlayerInput: IInputActionCollection2, IDisposable
         /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
         /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
         void OnAim(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "Prone" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnProne(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "Grapple" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnGrapple(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "GrappleAscend" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnGrappleAscend(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "GrappleDescend" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnGrappleDescend(InputAction.CallbackContext context);
     }
     /// <summary>
     /// Interface to implement callback methods for all input action callbacks associated with input actions defined by "UI" which allows adding and removing callbacks.

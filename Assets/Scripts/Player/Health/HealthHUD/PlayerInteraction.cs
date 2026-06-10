@@ -5,9 +5,13 @@
 //
 // ── Input Action setup required ──────────────────────────────────────────────
 // In your PlayerInput asset, Gameplay action map, add:
-//   UseLeft   → Left Mouse Button  (Button)
-//   UseRight  → Right Mouse Button (Button)
-//   Aim       → Middle Mouse Button (Button)
+//   UseLeft        → Left Mouse Button   (Button)
+//   UseRight       → Right Mouse Button  (Button)
+//   Aim            → Middle Mouse Button (Button)
+//   Prone          → Z                   (Button)
+//   Grapple        → F                   (Button)
+//   GrappleAscend  → Forward [Mouse]     (Button)
+//   GrappleDescend → Back [Mouse]        (Button)
 // Regenerate the C# class after saving.
 // ─────────────────────────────────────────────────────────────────────────────
 

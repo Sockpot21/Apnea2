@@ -1,4 +1,13 @@
-﻿using System.Collections;
+﻿// Player.cs
+// ── New Input Actions required in Gameplay action map ─────────────────────────
+//   Prone         → Z              (Button)
+//   Grapple       → F              (Button)
+//   GrappleAscend → Forward [Mouse](Button) — extra side button
+//   GrappleDescend→ Back [Mouse]   (Button) — extra side button
+// Regenerate C# class after adding these.
+// ─────────────────────────────────────────────────────────────────────────────
+
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -15,6 +24,7 @@ public class Player : MonoBehaviour
     [SerializeField] private StanceVinette stanceVignette;
     [SerializeField] private HealthManager healthManager;
     [SerializeField] private PlayerEquipment playerEquipment;
+    [SerializeField] private GrapplingHook grapplingHook;
 
     private PlayerInput _inputActions;
 
@@ -31,10 +41,7 @@ public class Player : MonoBehaviour
         stanceVignette.Initialize(volume.profile);
     }
 
-    private void OnDestroy()
-    {
-        _inputActions.Dispose();
-    }
+    private void OnDestroy() => _inputActions.Dispose();
 
     private void Update()
     {
@@ -54,12 +61,33 @@ public class Player : MonoBehaviour
             Jump = input.Jump.WasPressedThisFrame(),
             JumpSustain = input.Jump.IsPressed(),
             Crouch = input.Crouch.WasPressedThisFrame()
-                          ? CrouchInput.Toggle
-                          : CrouchInput.None,
-            Sprint = input.Sprint.IsPressed()
+                          ? CrouchInput.Toggle : CrouchInput.None,
+            Sprint = input.Sprint.IsPressed(),
+            Prone = input.Prone.WasPressedThisFrame()
         };
         playerCharacter.UpdateInput(characterInput);
         playerCharacter.UpdateBody(deltaTime);
+
+        // ── Grapple inputs ────────────────────────────────────────────────────
+        if (grapplingHook != null)
+        {
+            if (input.Grapple.WasPressedThisFrame())
+            {
+                var cam = Camera.main;
+                if (cam != null)
+                {
+                    var ray = cam.ScreenPointToRay(
+                        new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f));
+                    grapplingHook.ToggleGrapple(ray.origin, ray.direction);
+                }
+            }
+
+            if (input.GrappleAscend.IsPressed())
+                grapplingHook.AdjustRope(-grapplingHook.AscendSpeed * deltaTime);
+
+            if (input.GrappleDescend.IsPressed())
+                grapplingHook.AdjustRope(grapplingHook.DescendSpeed * deltaTime);
+        }
 
 #if UNITY_EDITOR
         if (Keyboard.current.tKey.wasPressedThisFrame)
@@ -79,26 +107,25 @@ public class Player : MonoBehaviour
 
         playerCamera.UpdatePosition(cameraTarget);
         cameraSpring.UpdateSpring(deltaTime, cameraTarget.up);
+
         cameraLean.UpdateLean(deltaTime, state.Stance is Stance.Slide,
             state.Acceloration, cameraTarget.up);
+        cameraLean.UpdateWallRunTilt(deltaTime, state.IsWallRunning,
+            state.WallNormal, cameraTarget.up);
 
-        // Pass aim state from PlayerEquipment into CameraFOV
         if (playerEquipment == null)
         {
-            Debug.LogError("[Player] PlayerEquipment is not assigned in the Inspector!");
+            Debug.LogError("[Player] PlayerEquipment not assigned!");
             cameraFOV.UpdateFOV(deltaTime, state.Stance, state.Velocity, false, 45f);
         }
         else
         {
             cameraFOV.UpdateFOV(deltaTime, state.Stance, state.Velocity,
-                                playerEquipment.IsAiming, playerEquipment.AimFOV);
+                playerEquipment.IsAiming, playerEquipment.AimFOV);
         }
 
         stanceVignette.UpdateVignette(deltaTime, state.Stance);
     }
 
-    public void Teleport(Vector3 position)
-    {
-        playerCharacter.SetPosition(position);
-    }
+    public void Teleport(Vector3 position) => playerCharacter.SetPosition(position);
 }
