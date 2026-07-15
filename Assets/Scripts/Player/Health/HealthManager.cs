@@ -155,8 +155,10 @@ public class HealthManager : MonoBehaviour
 
     private void Awake()
     {
-        if (playerCharacter == null) playerCharacter = GetComponent<PlayerCharacter>();
-        if (playerEquipment == null) playerEquipment = GetComponent<PlayerEquipment>();
+        if (playerCharacter == null)
+            playerCharacter = GetComponent<PlayerCharacter>() ?? GetComponentInParent<PlayerCharacter>();
+        if (playerEquipment == null)
+            playerEquipment = GetComponent<PlayerEquipment>() ?? GetComponentInParent<PlayerEquipment>();
         if (gameOverController == null) gameOverController = GetComponent<GameOverController>();
         InitialiseBody();
         BuildColliderMap();
@@ -461,7 +463,7 @@ public class HealthManager : MonoBehaviour
     private void EvaluateInjuryConsequences()
     {
         if (IsSubPartDestroyed(BodyPart.Head, SubPartCategory.Brain)
-            || AreAllSubPartsDestroyed(BodyPart.Head))
+            || HasZeroCondition(BodyPart.Head))
         {
             if (gameOverController == null) gameOverController = GetComponent<GameOverController>();
             if (gameOverController == null) gameOverController = gameObject.AddComponent<GameOverController>();
@@ -469,10 +471,10 @@ public class HealthManager : MonoBehaviour
             return;
         }
 
-        bool legOrSpineFailed = HasLimbFailure(BodyPart.LeftThigh)
-            || HasLimbFailure(BodyPart.LeftShin)
-            || HasLimbFailure(BodyPart.RightThigh)
-            || HasLimbFailure(BodyPart.RightShin)
+        bool legOrSpineFailed = HasZeroCondition(BodyPart.LeftThigh)
+            || HasZeroCondition(BodyPart.LeftShin)
+            || HasZeroCondition(BodyPart.RightThigh)
+            || HasZeroCondition(BodyPart.RightShin)
             // The body model has no Spine enum, so torso bone layers represent it.
             || HasBoneDestroyed(BodyPart.Chest)
             || HasBoneDestroyed(BodyPart.Abdomen);
@@ -484,10 +486,10 @@ public class HealthManager : MonoBehaviour
             playerEquipment?.DisableHandAndDrop(HandSlot.Right);
     }
 
-    private bool HasLimbFailure(BodyPart part) =>
-        AreAllSubPartsDestroyed(part) || HasBoneDestroyed(part);
+    private bool HasArmFailure(BodyPart part) => HasZeroCondition(part);
 
-    private bool HasArmFailure(BodyPart part) => AreAllSubPartsDestroyed(part);
+    private bool HasZeroCondition(BodyPart part) =>
+        _body.TryGetValue(part, out RuntimeBodyPart bodyPart) && bodyPart.ConditionRatio <= 0f;
 
     private bool HasBoneDestroyed(BodyPart part) =>
         IsSubPartDestroyed(part, SubPartCategory.Bone);

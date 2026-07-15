@@ -123,6 +123,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     private bool _requestedJump;
     private bool _requestedSustainedJump;
     private bool _requestedCrouch;
+    private bool _requestedCrouchPress;
     private bool _requestedCrouchInAir;
     private bool _requestedSprint;
     private bool _requestedProne;
@@ -317,6 +318,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         _requestedSustainedJump = input.JumpSustain;
 
         var wasCrouch = _requestedCrouch;
+        _requestedCrouchPress = input.Crouch is CrouchInput.Toggle;
         _requestedCrouch = input.Crouch switch
         {
             CrouchInput.Toggle => !_requestedCrouch,
@@ -374,17 +376,45 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
             switch (_state.Stance)
             {
                 case Stance.Stand:
-                case Stance.Sprint: EnterCrouch(); break;
-                case Stance.Crouch: if (_state.Grounded) EnterProne(); break;
-                case Stance.Prone: ExitProne(); break;
-                case Stance.Slide: if (_state.Grounded) EnterProne(); break;
+                case Stance.Sprint:
+                    _requestedCrouch = true;
+                    EnterCrouch();
+                    break;
+                case Stance.Crouch:
+                    if (_state.Grounded) EnterProne();
+                    break;
+                case Stance.Prone:
+                    _requestedCrouch = false;
+                    TryStand();
+                    break;
+                case Stance.Slide:
+                    if (_state.Grounded)
+                    {
+                        _requestedCrouch = true;
+                        EnterProne();
+                    }
+                    break;
             }
         }
+
+        // Crouch from prone always returns to crouch, rather than toggling the
+        // persistent crouch request into an unrelated state.
+        if (_requestedCrouchPress && _state.Stance is Stance.Prone && !_forcedCrawl)
+        {
+            ExitProne();
+            _requestedCrouch = true;
+        }
+        _requestedCrouchPress = false;
 
         // ── Sprint ────────────────────────────────────────────────────────────
         if (_requestedSprint && !_forcedCrawl)
         {
-            if (_state.Stance is Stance.Prone) ExitProne();
+            if (_state.Stance is Stance.Prone)
+            {
+                ExitProne();
+                _requestedCrouch = false;
+                TryStand();
+            }
             else if (_state.Stance is Stance.Crouch) TryStand();
         }
         if (_requestedSprint && _state.Grounded && _state.Stance is Stance.Stand
