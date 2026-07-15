@@ -1,107 +1,89 @@
-// SubPartDefinitionDrawer.cs
-// Custom property drawer for SubPartDefinition.
-// Hides organ-only fields when isOrgan = false,
-// and hides structural-only fields when isOrgan = true.
-// Place in any folder named "Editor".
-
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
 [CustomPropertyDrawer(typeof(SubPartDefinition))]
 public class SubPartDefinitionDrawer : PropertyDrawer
 {
-    // Foldout state per property path
-    private static System.Collections.Generic.Dictionary<string, bool> _foldouts = new();
+    private static readonly Dictionary<string, bool> Foldouts = new();
 
     public override float GetPropertyHeight(SerializedProperty property, GUIContent label)
     {
         if (!GetFoldout(property)) return EditorGUIUtility.singleLineHeight;
 
+        const float gap = 2f;
+        float height = EditorGUIUtility.singleLineHeight + gap;
+        string[] alwaysShown = { "subPartID", "displayName", "category", "isOrgan", "maxHealth" };
+        foreach (string name in alwaysShown)
+            height += EditorGUI.GetPropertyHeight(property.FindPropertyRelative(name), true) + gap;
+
         bool isOrgan = property.FindPropertyRelative("isOrgan").boolValue;
-        int lines = 5; // subPartID, displayName, category, isOrgan, maxHealth
-
         if (isOrgan)
-            lines += 1;  // organHitChance
-        else
-            lines += 2;  // breachThreshold + resistances list header
-
-        // Resistances list (only shown for non-organs)
-        if (!isOrgan)
         {
-            var resistances = property.FindPropertyRelative("resistances");
-            lines += 1; // list size field
-            if (resistances.isExpanded)
-                lines += resistances.arraySize * 2 + 1;
+            height += EditorGUI.GetPropertyHeight(
+                property.FindPropertyRelative("organHitChance"), true) + gap;
+        }
+        else
+        {
+            height += EditorGUI.GetPropertyHeight(
+                property.FindPropertyRelative("breachThreshold"), true) + gap;
+            height += EditorGUI.GetPropertyHeight(
+                property.FindPropertyRelative("resistances"), true) + gap;
         }
 
-        return lines * (EditorGUIUtility.singleLineHeight + 2f) + 4f;
+        return height + 2f;
     }
 
     public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
     {
         EditorGUI.BeginProperty(position, label, property);
 
-        float lineH  = EditorGUIUtility.singleLineHeight;
-        float gap    = 2f;
-        float y      = position.y;
-
-        // Foldout header
-        bool expanded = GetFoldout(property);
-        var foldoutRect = new Rect(position.x, y, position.width, lineH);
-        expanded = EditorGUI.Foldout(foldoutRect, expanded, label, true, EditorStyles.boldLabel);
+        float lineHeight = EditorGUIUtility.singleLineHeight;
+        const float gap = 2f;
+        float y = position.y;
+        bool expanded = EditorGUI.Foldout(new Rect(position.x, y, position.width, lineHeight),
+            GetFoldout(property), label, true, EditorStyles.boldLabel);
         SetFoldout(property, expanded);
-        y += lineH + gap;
+        y += lineHeight + gap;
 
-        if (!expanded) { EditorGUI.EndProperty(); return; }
+        if (!expanded)
+        {
+            EditorGUI.EndProperty();
+            return;
+        }
 
         EditorGUI.indentLevel++;
+        DrawField(ref y, position, property, "subPartID", "Sub Part ID", gap);
+        DrawField(ref y, position, property, "displayName", "Display Name", gap);
+        DrawField(ref y, position, property, "category", "Category", gap);
+        DrawField(ref y, position, property, "isOrgan", "Is Organ", gap);
+        DrawField(ref y, position, property, "maxHealth", "Max Health", gap);
 
-        bool isOrgan = property.FindPropertyRelative("isOrgan").boolValue;
-
-        // Always-shown fields
-        DrawField(ref y, position, property, "subPartID",   "Sub Part ID",   lineH, gap);
-        DrawField(ref y, position, property, "displayName", "Display Name",  lineH, gap);
-        DrawField(ref y, position, property, "category",    "Category",      lineH, gap);
-        DrawField(ref y, position, property, "isOrgan",     "Is Organ",      lineH, gap);
-        DrawField(ref y, position, property, "maxHealth",   "Max Health",    lineH, gap);
-
-        if (isOrgan)
-        {
-            // Organ-only
-            DrawField(ref y, position, property, "organHitChance", "Organ Hit Chance", lineH, gap);
-        }
+        if (property.FindPropertyRelative("isOrgan").boolValue)
+            DrawField(ref y, position, property, "organHitChance", "Organ Hit Chance", gap);
         else
         {
-            // Structural-only
-            DrawField(ref y, position, property, "breachThreshold", "Breach Threshold", lineH, gap);
-
-            // Resistances list
-            var resistances = property.FindPropertyRelative("resistances");
-            float listHeight = EditorGUI.GetPropertyHeight(resistances, true);
-            var listRect = new Rect(position.x, y, position.width, listHeight);
-            EditorGUI.PropertyField(listRect, resistances, new GUIContent("Resistances"), true);
-            y += listHeight + gap;
+            DrawField(ref y, position, property, "breachThreshold", "Breach Threshold", gap);
+            DrawField(ref y, position, property, "resistances", "Resistances", gap);
         }
 
         EditorGUI.indentLevel--;
         EditorGUI.EndProperty();
     }
 
-    private static void DrawField(ref float y, Rect pos, SerializedProperty parent,
-        string propName, string label, float lineH, float gap)
+    private static void DrawField(ref float y, Rect position, SerializedProperty parent,
+        string propertyName, string label, float gap)
     {
-        var prop = parent.FindPropertyRelative(propName);
-        var rect = new Rect(pos.x, y, pos.width, lineH);
-        EditorGUI.PropertyField(rect, prop, new GUIContent(label));
-        y += lineH + gap;
+        SerializedProperty child = parent.FindPropertyRelative(propertyName);
+        float height = EditorGUI.GetPropertyHeight(child, true);
+        EditorGUI.PropertyField(new Rect(position.x, y, position.width, height),
+            child, new GUIContent(label), true);
+        y += height + gap;
     }
 
-    private static bool GetFoldout(SerializedProperty p)
-    {
-        if (!_foldouts.TryGetValue(p.propertyPath, out bool v)) v = false;
-        return v;
-    }
+    private static bool GetFoldout(SerializedProperty property) =>
+        Foldouts.TryGetValue(property.propertyPath, out bool expanded) && expanded;
 
-    private static void SetFoldout(SerializedProperty p, bool v) =>
-        _foldouts[p.propertyPath] = v;
+    private static void SetFoldout(SerializedProperty property, bool expanded) =>
+        Foldouts[property.propertyPath] = expanded;
 }

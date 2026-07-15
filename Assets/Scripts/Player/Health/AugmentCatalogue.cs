@@ -9,6 +9,32 @@
 using UnityEngine;
 using System.Collections.Generic;
 
+public enum PlayerAugmentStat
+{
+    WalkSpeed, CrouchSpeed, WalkResponse, CrouchResponse,
+    SprintEnabled, SprintSpeed, SprintResponse,
+    JumpSpeed, CoyoteTime, JumpSustainGravity, Gravity, DoubleJumpEnabled,
+    SlideStartSpeed, SlideEndSpeed, SlideFriction, SlideSteerAcceleration, SlideGravity,
+    AirSpeed, AirAcceleration,
+    WallRunEnabled, WallRunMinEntrySpeed, HorizontalWallRunEntrySpeedMultiplier,
+    HorizontalWallRunDuration, HorizontalWallRunDecayRate, WallRunGravityFadeTime,
+    WallRunCooldown, WallDetectRadius, WallNormalTolerance, WallRunPitchThreshold,
+    VerticalWallRunStartSpeed, VerticalWallRunDuration, VerticalWallRunDecayRate,
+    WallRunArcHeight,
+    ProneHeight, ProneSpeed, ProneResponse
+}
+
+[System.Serializable]
+public class AugmentStatOverride
+{
+    [Tooltip("The player-controller stat this augment overrides while its body part is functional.")]
+    public PlayerAugmentStat stat;
+    [Tooltip("Value used for numeric stats.")]
+    public float value;
+    [Tooltip("Value used for toggle stats (Sprint Enabled, Double Jump Enabled, Wall Run Enabled).")]
+    public bool boolValue;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // AugmentEntry
 // One installable augment. Custom editor (AugmentEntryDrawer) hides fields
@@ -41,6 +67,10 @@ public class AugmentEntry
 
     [Tooltip("The replacement sub-part definition. Used when isSubPartAugment is true.")]
     public SubPartDefinition subPartDefinition;
+
+    [Header("Player Stat Overrides")]
+    [Tooltip("Only add stats this augment changes. Each value is an override, not an additive bonus.")]
+    public List<AugmentStatOverride> statOverrides = new List<AugmentStatOverride>();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -83,10 +83,9 @@ public class Player : MonoBehaviour
             }
 
             if (input.GrappleAscend.IsPressed())
-                grapplingHook.AdjustRope(-grapplingHook.AscendSpeed * deltaTime);
-
-            if (input.GrappleDescend.IsPressed())
-                grapplingHook.AdjustRope(grapplingHook.DescendSpeed * deltaTime);
+                grapplingHook.Ascend(deltaTime);
+            else
+                grapplingHook.StopAdjust();
         }
 
 #if UNITY_EDITOR
@@ -110,7 +109,7 @@ public class Player : MonoBehaviour
 
         cameraLean.UpdateLean(deltaTime, state.Stance is Stance.Slide,
             state.Acceloration, cameraTarget.up);
-        cameraLean.UpdateWallRunTilt(deltaTime, state.IsWallRunning,
+        cameraLean.UpdateWallRunTilt(deltaTime, state.IsWallRunning && !state.IsVerticalWallRunning,
             state.WallNormal, cameraTarget.up);
 
         if (playerEquipment == null)

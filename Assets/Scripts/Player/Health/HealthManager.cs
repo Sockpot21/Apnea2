@@ -4,6 +4,8 @@
 // Auto-notifies PlayerEquipment when an armour layer is destroyed.
 
 using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 using System.Collections.Generic;
 using System.Text;
 
@@ -133,12 +135,29 @@ public class HealthManager : MonoBehaviour
     [Header("References")]
     public PlayerHealth playerHealth;
     public PlayerEquipment playerEquipment; // for armour destruction callback
+    [SerializeField] private PlayerCharacter playerCharacter;
+    [SerializeField] private GameOverController gameOverController;
 
     private Dictionary<BodyPart, RuntimeBodyPart> _body = new();
     private Dictionary<Collider, BodyPart> _colliderMap = new();
+    private readonly List<InstalledAugmentEffect> _installedAugmentEffects = new();
+
+    private class InstalledAugmentEffect
+    {
+        public AugmentEntry entry;
+        public RuntimeBodyPart bodyPart;
+        public RuntimeSubPart subPart;
+
+        public bool IsFunctional => subPart != null
+            ? !subPart.IsDestroyed
+            : bodyPart != null && bodyPart.ConditionRatio > 0f;
+    }
 
     private void Awake()
     {
+        if (playerCharacter == null) playerCharacter = GetComponent<PlayerCharacter>();
+        if (playerEquipment == null) playerEquipment = GetComponent<PlayerEquipment>();
+        if (gameOverController == null) gameOverController = GetComponent<GameOverController>();
         InitialiseBody();
         BuildColliderMap();
     }
@@ -199,6 +218,8 @@ public class HealthManager : MonoBehaviour
         CheckArmourDestruction(part, result, log);
 
         playerHealth?.OnDamageReceived(result);
+        RefreshAugmentStatOverrides();
+        EvaluateInjuryConsequences();
     }
 
     // ── Armour destruction check ──────────────────────────────────────────────
@@ -361,7 +382,11 @@ public class HealthManager : MonoBehaviour
     {
         var entry = augmentCatalogue?.GetAugment(augmentID);
         if (entry == null || entry.isSubPartAugment) return;
-        _body[entry.targetBodyPart] = RuntimeBodyPart.FromDefinition(entry.definition);
+        RuntimeBodyPart runtimePart = RuntimeBodyPart.FromDefinition(entry.definition);
+        _body[entry.targetBodyPart] = runtimePart;
+        _installedAugmentEffects.RemoveAll(effect => effect.entry.targetBodyPart == entry.targetBodyPart);
+        _installedAugmentEffects.Add(new InstalledAugmentEffect { entry = entry, bodyPart = runtimePart });
+        RefreshAugmentStatOverrides();
         Debug.Log($"[HealthManager] Full augment installed: {entry.displayName} → {entry.targetBodyPart}");
         playerHealth?.OnBodyInitialised(_body);
     }
@@ -384,6 +409,8 @@ public class HealthManager : MonoBehaviour
             if (bodyPart.layers[i].category == entry.targetSubPartCategory)
             {
                 bodyPart.layers[i] = newRuntime;
+                TrackSubPartAugmentEffect(entry, bodyPart, newRuntime);
+                RefreshAugmentStatOverrides();
                 playerHealth?.OnBodyInitialised(_body);
                 return;
             }
@@ -393,12 +420,105 @@ public class HealthManager : MonoBehaviour
             if (bodyPart.organs[i].category == entry.targetSubPartCategory)
             {
                 bodyPart.organs[i] = newRuntime;
+                TrackSubPartAugmentEffect(entry, bodyPart, newRuntime);
+                RefreshAugmentStatOverrides();
                 playerHealth?.OnBodyInitialised(_body);
                 return;
             }
         }
 
         Debug.LogWarning($"[HealthManager] No matching sub-part '{entry.targetSubPartCategory}' in {entry.targetBodyPart}.");
+    }
+
+    private void TrackSubPartAugmentEffect(AugmentEntry entry, RuntimeBodyPart bodyPart, RuntimeSubPart subPart)
+    {
+        _installedAugmentEffects.RemoveAll(effect => effect.entry.targetBodyPart == entry.targetBodyPart
+            && effect.entry.isSubPartAugment
+            && effect.entry.targetSubPartCategory == entry.targetSubPartCategory);
+        _installedAugmentEffects.Add(new InstalledAugmentEffect
+        {
+            entry = entry,
+            bodyPart = bodyPart,
+            subPart = subPart
+        });
+    }
+
+    private void RefreshAugmentStatOverrides()
+    {
+        if (playerCharacter == null) playerCharacter = GetComponent<PlayerCharacter>();
+        if (playerCharacter == null) return;
+
+        var activeOverrides = new List<AugmentStatOverride>();
+        foreach (InstalledAugmentEffect effect in _installedAugmentEffects)
+            if (effect.IsFunctional && effect.entry.statOverrides != null)
+                activeOverrides.AddRange(effect.entry.statOverrides);
+
+        // Effects are collected in installation order, so later installed
+        // augments deterministically override an earlier duplicate stat.
+        playerCharacter.ApplyAugmentStatOverrides(activeOverrides);
+    }
+
+    private void EvaluateInjuryConsequences()
+    {
+        if (IsSubPartDestroyed(BodyPart.Head, SubPartCategory.Brain)
+            || AreAllSubPartsDestroyed(BodyPart.Head))
+        {
+            if (gameOverController == null) gameOverController = GetComponent<GameOverController>();
+            if (gameOverController == null) gameOverController = gameObject.AddComponent<GameOverController>();
+            gameOverController.ShowGameOver();
+            return;
+        }
+
+        bool legOrSpineFailed = HasLimbFailure(BodyPart.LeftThigh)
+            || HasLimbFailure(BodyPart.LeftShin)
+            || HasLimbFailure(BodyPart.RightThigh)
+            || HasLimbFailure(BodyPart.RightShin)
+            // The body model has no Spine enum, so torso bone layers represent it.
+            || HasBoneDestroyed(BodyPart.Chest)
+            || HasBoneDestroyed(BodyPart.Abdomen);
+        playerCharacter?.SetForcedCrawl(legOrSpineFailed);
+
+        if (HasArmFailure(BodyPart.LeftUpperArm) || HasArmFailure(BodyPart.LeftForearm))
+            playerEquipment?.DisableHandAndDrop(HandSlot.Left);
+        if (HasArmFailure(BodyPart.RightUpperArm) || HasArmFailure(BodyPart.RightForearm))
+            playerEquipment?.DisableHandAndDrop(HandSlot.Right);
+    }
+
+    private bool HasLimbFailure(BodyPart part) =>
+        AreAllSubPartsDestroyed(part) || HasBoneDestroyed(part);
+
+    private bool HasArmFailure(BodyPart part) => AreAllSubPartsDestroyed(part);
+
+    private bool HasBoneDestroyed(BodyPart part) =>
+        IsSubPartDestroyed(part, SubPartCategory.Bone);
+
+    private bool IsSubPartDestroyed(BodyPart part, SubPartCategory category)
+    {
+        if (!_body.TryGetValue(part, out RuntimeBodyPart bodyPart)) return false;
+
+        foreach (RuntimeSubPart layer in bodyPart.layers)
+            if (layer.category == category && layer.IsDestroyed) return true;
+        foreach (RuntimeSubPart organ in bodyPart.organs)
+            if (organ.category == category && organ.IsDestroyed) return true;
+        return false;
+    }
+
+    private bool AreAllSubPartsDestroyed(BodyPart part)
+    {
+        if (!_body.TryGetValue(part, out RuntimeBodyPart bodyPart)) return false;
+
+        int subPartCount = 0;
+        foreach (RuntimeSubPart layer in bodyPart.layers)
+        {
+            subPartCount++;
+            if (!layer.IsDestroyed) return false;
+        }
+        foreach (RuntimeSubPart organ in bodyPart.organs)
+        {
+            subPartCount++;
+            if (!organ.IsDestroyed) return false;
+        }
+        return subPartCount > 0;
     }
 
     public void RegisterCollider(Collider col, BodyPart part) => _colliderMap[col] = part;
@@ -410,4 +530,102 @@ public class HealthManager : MonoBehaviour
     }
 
     public IReadOnlyDictionary<BodyPart, RuntimeBodyPart> GetFullBody() => _body;
+}
+
+public class GameOverController : MonoBehaviour
+{
+    private bool _shown;
+
+    public void ShowGameOver()
+    {
+        if (_shown) return;
+        _shown = true;
+        Time.timeScale = 0f;
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+
+        var canvasObject = new GameObject("GameOverCanvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+        var canvas = canvasObject.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 1000;
+
+        Image background = CreateImage("Background", canvasObject.transform, new Color(0f, 0f, 0f, 0.82f));
+        Stretch(background.rectTransform);
+
+        var panel = new GameObject("Panel", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+        panel.transform.SetParent(canvasObject.transform, false);
+        var panelRect = panel.GetComponent<RectTransform>();
+        panelRect.anchorMin = panelRect.anchorMax = new Vector2(0.5f, 0.5f);
+        panelRect.pivot = new Vector2(0.5f, 0.5f);
+        panelRect.sizeDelta = new Vector2(420f, 0f);
+        var layout = panel.GetComponent<VerticalLayoutGroup>();
+        layout.padding = new RectOffset(32, 32, 28, 28);
+        layout.spacing = 16f;
+        layout.childAlignment = TextAnchor.MiddleCenter;
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        panel.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        CreateLabel("GAME OVER", panel.transform, 42, Color.red);
+        CreateLabel("Neural function lost.", panel.transform, 20, Color.white);
+        CreateButton("Restart", panel.transform, Restart);
+        CreateButton("Exit", panel.transform, Exit);
+    }
+
+    private static Image CreateImage(string name, Transform parent, Color color)
+    {
+        var obj = new GameObject(name, typeof(RectTransform), typeof(Image));
+        obj.transform.SetParent(parent, false);
+        var image = obj.GetComponent<Image>();
+        image.color = color;
+        return image;
+    }
+
+    private static void CreateLabel(string text, Transform parent, int size, Color color)
+    {
+        var obj = new GameObject(text, typeof(RectTransform), typeof(Text), typeof(LayoutElement));
+        obj.transform.SetParent(parent, false);
+        var label = obj.GetComponent<Text>();
+        label.text = text;
+        label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        label.fontSize = size;
+        label.color = color;
+        label.alignment = TextAnchor.MiddleCenter;
+        label.horizontalOverflow = HorizontalWrapMode.Wrap;
+        obj.GetComponent<LayoutElement>().minHeight = size + 12f;
+    }
+
+    private static void CreateButton(string label, Transform parent, UnityEngine.Events.UnityAction action)
+    {
+        Image image = CreateImage(label, parent, new Color(0.15f, 0.15f, 0.18f, 1f));
+        var button = image.gameObject.AddComponent<Button>();
+        button.targetGraphic = image;
+        button.onClick.AddListener(action);
+        image.gameObject.AddComponent<LayoutElement>().preferredHeight = 48f;
+        CreateLabel(label, image.transform, 20, Color.white);
+    }
+
+    private static void Stretch(RectTransform rect)
+    {
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+    }
+
+    private void Restart()
+    {
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+    }
+
+    private void Exit()
+    {
+        Time.timeScale = 1f;
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
+    }
 }

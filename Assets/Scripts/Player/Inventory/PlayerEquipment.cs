@@ -21,6 +21,7 @@ public class PlayerEquipment : MonoBehaviour
 
     private ItemDefinition _leftHand;
     private ItemDefinition _rightHand;
+    private readonly HashSet<HandSlot> _disabledHands = new();
 
     // Muzzle points — found on instantiated weapon prefabs
     // TODO: when real weapon models are ready, instantiate worldPrefab and
@@ -124,6 +125,12 @@ public class PlayerEquipment : MonoBehaviour
 
     public bool TryEquipHand(ItemDefinition item, HandSlot hand)
     {
+        if (_disabledHands.Contains(hand))
+        {
+            Debug.LogWarning($"[Equipment] Cannot equip {hand} hand: the arm is non-functional.");
+            return false;
+        }
+
         if (!item.IsWeapon && !item.IsConsumable)
         {
             Debug.LogWarning($"[Equipment] '{item.displayName}' is not a weapon or consumable.");
@@ -132,6 +139,12 @@ public class PlayerEquipment : MonoBehaviour
 
         if (item.IsTwoHanded)
         {
+            var requiredOtherHand = hand == HandSlot.Left ? HandSlot.Right : HandSlot.Left;
+            if (_disabledHands.Contains(requiredOtherHand))
+            {
+                Debug.LogWarning("[Equipment] Cannot equip a two-handed item while one arm is non-functional.");
+                return false;
+            }
             if (_leftHand != null) ReturnHandItemToInventory(HandSlot.Left);
             if (_rightHand != null) ReturnHandItemToInventory(HandSlot.Right);
             _leftHand = item;
@@ -192,6 +205,27 @@ public class PlayerEquipment : MonoBehaviour
             Debug.LogWarning($"[Equipment] Inventory full — could not return '{item.displayName}'.");
 
         Debug.Log($"[Equipment] '{item.displayName}' unequipped from {hand} hand.");
+        OnEquipmentChanged?.Invoke();
+    }
+
+    public void DisableHandAndDrop(HandSlot hand)
+    {
+        if (!_disabledHands.Add(hand)) return;
+
+        ItemDefinition item = GetHandSlot(hand);
+        if (item != null)
+        {
+            bool wasTwoHanded = item.IsTwoHanded;
+            ClearHandItem(item);
+            DropItem(item);
+
+            if (wasTwoHanded)
+                Debug.Log($"[Equipment] Two-handed '{item.displayName}' dropped because {hand} arm failed.");
+            else
+                Debug.Log($"[Equipment] '{item.displayName}' dropped because {hand} arm failed.");
+        }
+
+        if (!HasRangedWeapon) _isAiming = false;
         OnEquipmentChanged?.Invoke();
     }
 
@@ -331,5 +365,33 @@ public class PlayerEquipment : MonoBehaviour
         else _rightHand = null;
         if (!inventory.TryAdd(item))
             Debug.LogWarning($"[Equipment] Inventory full — could not return '{item.displayName}'.");
+    }
+
+    private void ClearHandItem(ItemDefinition item)
+    {
+        if (_leftHand == item) { _leftHand = null; _leftMuzzle = null; }
+        if (_rightHand == item) { _rightHand = null; _rightMuzzle = null; }
+    }
+
+    private void DropItem(ItemDefinition item)
+    {
+        if (item.worldPrefab == null)
+        {
+            Debug.LogWarning($"[Equipment] '{item.displayName}' has no world prefab and could not be dropped.");
+            return;
+        }
+
+        Vector3 origin = transform.position + transform.forward * 0.75f + Vector3.up;
+        Vector3 dropPosition = origin;
+        if (Physics.Raycast(origin + Vector3.up, Vector3.down, out RaycastHit hit, 4f))
+            dropPosition = hit.point + Vector3.up * 0.1f;
+
+        GameObject dropped = Instantiate(item.worldPrefab, dropPosition, Quaternion.identity);
+        PickupItem pickup = dropped.GetComponent<PickupItem>();
+        if (pickup == null) pickup = dropped.AddComponent<PickupItem>();
+        pickup.item = item;
+
+        if (dropped.TryGetComponent(out Rigidbody rigidbody))
+            rigidbody.AddForce(transform.forward * 1.5f + Vector3.up, ForceMode.Impulse);
     }
 }

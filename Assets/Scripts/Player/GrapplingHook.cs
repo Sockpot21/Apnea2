@@ -1,9 +1,10 @@
 ﻿// GrapplingHook.cs
-// Attach to the Character GameObject (child of Player).
-// Multi-segment rope: wraps around geometry as the player swings.
-// PlayerCharacter calls ApplyGrappleVelocity() each UpdateVelocity when active.
+// Attach to the Character child GameObject.
+// Single-point grapple. Straight rope. Pendulum swing.
+// Ascend applies velocity ONLY on frames the button is held — zero residual force
+// the instant it's released. Pulls moveable Rigidbody targets toward the player;
+// pulls the player toward fixed targets.
 
-using System.Collections.Generic;
 using UnityEngine;
 
 public class GrapplingHook : MonoBehaviour
@@ -11,37 +12,35 @@ public class GrapplingHook : MonoBehaviour
     [Header("References")]
     [SerializeField] private KinematicCharacterController.KinematicCharacterMotor motor;
 
-    [Header("Settings")]
+    [Header("Grapple")]
     [SerializeField] private float maxRange = 30f;
-    [SerializeField] private float ascendSpeed = 12f;
-    [SerializeField] private float descendSpeed = 6f;
-    [SerializeField] private float swingInfluence = 0.35f;
+    [SerializeField] private float maxSwingSpeed = 25f;
+    [SerializeField] private float swingInfluence = 0.4f;
 
-    [Header("Rope Visual")]
+    [Header("Ascend / Pull")]
+    [SerializeField] private float ascendMaxSpeed = 12f;
+    [SerializeField] private float adjustRampTime = 0.3f;
+    [SerializeField] private float pullObjectSpeed = 14f;
+
+    [Header("Visual")]
     [SerializeField] private LineRenderer ropeRenderer;
 
-    // ── Public properties ─────────────────────────────────────────────────────
+    // ── Public ────────────────────────────────────────────────────────────────
 
     public bool IsGrappling => _isGrappling;
-    public float AscendSpeed => ascendSpeed;
-    public float DescendSpeed => descendSpeed;
 
     // ── Runtime ───────────────────────────────────────────────────────────────
 
     private bool _isGrappling = false;
-    private bool _isFixed = false;
+    private Vector3 _anchor = Vector3.zero;
     private Rigidbody _anchorRb = null;
-
-    // Segment chain: [0] = player position (updated live),
-    // [1..n-1] = wrap points, [n] = original anchor
-    private List<Vector3> _segments = new List<Vector3>();
-
-    // Active rope length = distance from player to first wrap/anchor
     private float _ropeLength = 0f;
 
-    // The point the player is currently swinging around
-    private Vector3 ActivePivot => _segments.Count >= 2
-        ? _segments[_segments.Count - 1] : Vector3.zero;
+    // Ascend state — read by ApplyGrappleVelocity. Reset to 0 every frame
+    // BEFORE Ascend() is called; only set back to non-zero if Ascend() runs
+    // this frame. This guarantees zero residual the instant the button releases.
+    private float _ascendTimer = 0f;
+    private float _currentAscendSpeed = 0f; // 0 unless Ascend() called THIS frame
 
     // ── Public API ────────────────────────────────────────────────────────────
 
@@ -51,19 +50,44 @@ public class GrapplingHook : MonoBehaviour
         Fire(rayOrigin, rayDirection);
     }
 
-    public void AdjustRope(float delta)
+    /// <summary>
+    /// Call once per frame BEFORE UpdateVelocity runs, ONLY while the ascend
+    /// button is held. If not called this frame, ascend speed is implicitly zero
+    /// (see PreUpdateResetAscend, called every frame regardless).
+    /// </summary>
+    public void Ascend(float deltaTime)
     {
         if (!_isGrappling) return;
-        _ropeLength = Mathf.Max(0.5f, _ropeLength + delta);
+
+        _ascendTimer = Mathf.Min(_ascendTimer + deltaTime, adjustRampTime);
+        float t = _ascendTimer / adjustRampTime;
+        _currentAscendSpeed = ascendMaxSpeed * t;
+
+        if (_anchorRb != null)
+        {
+            var dir = (transform.position - _anchorRb.position).normalized;
+            _anchorRb.linearVelocity = dir * (pullObjectSpeed * t);
+        }
+    }
+
+    /// <summary>
+    /// Call once per frame when the ascend button is NOT held.
+    /// Resets ramp and guarantees zero ascend velocity this frame.
+    /// </summary>
+    public void StopAdjust()
+    {
+        _ascendTimer = 0f;
+        _currentAscendSpeed = 0f;
+
+        if (_anchorRb != null)
+            _anchorRb.linearVelocity = Vector3.zero;
     }
 
     public void Release()
     {
         _isGrappling = false;
-        _isFixed = false;
         _anchorRb = null;
-        _segments.Clear();
-
+        StopAdjust();
         if (ropeRenderer != null) ropeRenderer.enabled = false;
         Debug.Log("[Grapple] Released.");
     }
@@ -72,164 +96,96 @@ public class GrapplingHook : MonoBehaviour
 
     private void Fire(Vector3 origin, Vector3 direction)
     {
-        if (!Physics.Raycast(origin, direction, out var hit, maxRange)) return;
+        if (!Physics.Raycast(origin, direction, out var hit, maxRange))
+        {
+            Debug.Log("[Grapple] Fire missed — nothing in range.");
+            return;
+        }
 
-        _segments.Clear();
-        _segments.Add(transform.position); // [0] player — updated each frame
-        _segments.Add(hit.point);          // [1] anchor
-
-        _ropeLength = Vector3.Distance(transform.position, hit.point);
+        _anchor = hit.point;
+        _ropeLength = Vector3.Distance(transform.position, _anchor);
         _isGrappling = true;
+        StopAdjust();
 
         var rb = hit.collider.attachedRigidbody;
-        if (rb != null && !rb.isKinematic)
-        {
-            _anchorRb = rb;
-            _isFixed = false;
-            Debug.Log($"[Grapple] Attached to moveable: {hit.collider.name}");
-        }
-        else
-        {
-            _anchorRb = null;
-            _isFixed = true;
-            Debug.Log($"[Grapple] Attached to fixed: {hit.collider.name} at {hit.point}");
-        }
+        _anchorRb = (rb != null && !rb.isKinematic) ? rb : null;
 
-        if (ropeRenderer != null) ropeRenderer.enabled = true;
+        Debug.Log($"[Grapple] Fired → {hit.collider.name} | len:{_ropeLength:F1} | " +
+                  $"moveable:{_anchorRb != null}");
+
+        if (ropeRenderer != null)
+        {
+            ropeRenderer.positionCount = 2;
+            ropeRenderer.enabled = true;
+        }
     }
 
-    // ── Per-frame ─────────────────────────────────────────────────────────────
+    // ── Visual ────────────────────────────────────────────────────────────────
 
     private void LateUpdate()
     {
-        if (!_isGrappling) return;
+        if (!_isGrappling || ropeRenderer == null) return;
 
-        // Keep player segment up to date
-        if (_segments.Count > 0)
-            _segments[0] = transform.position;
-
-        // Keep moveable anchor up to date
-        if (_anchorRb != null && _segments.Count >= 2)
-            _segments[_segments.Count - 1] = _anchorRb.position;
-
-        ProcessRopeSegments();
-        UpdateRopeVisual();
-    }
-
-    /// <summary>
-    /// Checks each segment of the rope for new wrap points (geometry intersecting
-    /// the rope) and removes wrap points the player has swung back past.
-    /// </summary>
-    private void ProcessRopeSegments()
-    {
-        if (_segments.Count < 2) return;
-
-        // ── Add wrap points ────────────────────────────────────────────────────
-        // Cast from each segment point toward the next; if blocked, insert a wrap point
-        for (int i = 0; i < _segments.Count - 1; i++)
-        {
-            var from = _segments[i];
-            var to = _segments[i + 1];
-            var dir = to - from;
-            var dist = dir.magnitude;
-
-            if (dist < 0.05f) continue;
-
-            if (Physics.Raycast(from, dir.normalized, out var hit, dist))
-            {
-                // Don't wrap on the character's own colliders
-                if (hit.collider.transform.IsChildOf(transform)) continue;
-
-                // Insert the wrap point between these two segments
-                _segments.Insert(i + 1, hit.point);
-                Debug.Log($"[Grapple] Rope wrapped around: {hit.collider.name}");
-
-                // Update active rope length to new innermost segment
-                _ropeLength = Vector3.Distance(_segments[0], _segments[1]);
-                break; // process one wrap per frame to avoid runaway insertion
-            }
-        }
-
-        // ── Remove stale wrap points ───────────────────────────────────────────
-        // If the line of sight from the player to the second-to-last point is clear,
-        // the last wrap point is no longer needed
-        while (_segments.Count > 2)
-        {
-            var player = _segments[0];
-            var wrapPoint = _segments[1];
-            var nextPoint = _segments[2];
-
-            // Compute the angle at the wrap point between the two adjacent segments
-            var toPlayer = (player - wrapPoint).normalized;
-            var toNext = (nextPoint - wrapPoint).normalized;
-            var angle = Vector3.Angle(toPlayer, toNext);
-
-            // If the player has swung past the wrap point (angle > 180 flattens),
-            // or direct line of sight to next point is clear, remove the wrap point
-            if (angle > 175f || !Physics.Linecast(player, nextPoint))
-            {
-                _segments.RemoveAt(1);
-                _ropeLength = Vector3.Distance(_segments[0], _segments[1]);
-            }
-            else break;
-        }
+        var anchor = _anchorRb != null ? _anchorRb.position : _anchor;
+        ropeRenderer.SetPosition(0, transform.position);
+        ropeRenderer.SetPosition(1, anchor);
     }
 
     // ── Velocity applied to player ────────────────────────────────────────────
 
+    /// <summary>
+    /// Call from PlayerCharacter.UpdateVelocity every frame while IsGrappling.
+    /// </summary>
     public void ApplyGrappleVelocity(ref Vector3 currentVelocity, float deltaTime,
                                       Vector3 requestedMovement, float airAcceleration)
     {
-        if (!_isGrappling || _segments.Count < 2) return;
+        if (!_isGrappling) return;
 
-        var playerPos = transform.position;
-        var pivot = _segments[1]; // first wrap or anchor
-        var toPlayer = playerPos - pivot;
-        var dist = toPlayer.magnitude;
-
+        var anchor = _anchorRb != null ? _anchorRb.position : _anchor;
+        var toPlayer = transform.position - anchor;
+        float dist = toPlayer.magnitude;
         if (dist < 0.01f) return;
 
-        var ropeDir = toPlayer.normalized;
+        var ropeDir = toPlayer.normalized; // anchor → player
 
-        // ── Constraint: stop rope extending beyond its length ─────────────────
-        if (dist >= _ropeLength)
+        // ── Ascend override — ONLY non-zero on frames Ascend() was called ─────
+        // This is applied BEFORE the pendulum logic and directly sets the
+        // rope-direction component of velocity. When _currentAscendSpeed is 0
+        // (button not held this frame), this line does nothing at all.
+        if (_currentAscendSpeed > 0f && _anchorRb == null)
         {
-            var outward = Vector3.Dot(currentVelocity, ropeDir);
-            if (outward > 0f)
-                currentVelocity -= ropeDir * outward;
+            // Remove existing rope-direction velocity, replace with ascend speed
+            float existing = Vector3.Dot(currentVelocity, ropeDir);
+            currentVelocity -= ropeDir * existing;
+            currentVelocity -= ropeDir * _currentAscendSpeed; // move toward anchor
+
+            // Shrink rope length to match so taut constraint doesn't fight this
+            _ropeLength = Mathf.Max(1f, dist - _currentAscendSpeed * deltaTime);
         }
+
+        // ── Taut constraint ───────────────────────────────────────────────────
+        float err = dist - _ropeLength;
+        if (Mathf.Abs(err) > 0.01f)
+            currentVelocity -= ropeDir * (err / deltaTime) * 0.5f;
+
+        // ── Pendulum: remove outward velocity ─────────────────────────────────
+        float outward = Vector3.Dot(currentVelocity, ropeDir);
+        if (outward > 0f) currentVelocity -= ropeDir * outward;
 
         // ── Gravity ───────────────────────────────────────────────────────────
         currentVelocity += Physics.gravity * deltaTime;
 
-        // ── Light swing influence from WASD ───────────────────────────────────
+        // ── WASD swing influence ──────────────────────────────────────────────
         if (requestedMovement.sqrMagnitude > 0.01f)
         {
             var tangent = Vector3.ProjectOnPlane(requestedMovement, ropeDir).normalized;
             currentVelocity += tangent * airAcceleration * swingInfluence * deltaTime;
         }
 
-        // ── Moveable object constraint ────────────────────────────────────────
-        if (_anchorRb != null)
-        {
-            var objToPlayer = playerPos - _anchorRb.position;
-            var objDist = objToPlayer.magnitude;
-            if (objDist > _ropeLength)
-            {
-                var pullDir = objToPlayer.normalized;
-                _anchorRb.linearVelocity += pullDir * (objDist - _ropeLength) / deltaTime * 0.5f;
-            }
-        }
-    }
+        // ── Speed cap ─────────────────────────────────────────────────────────
+        currentVelocity = Vector3.ClampMagnitude(currentVelocity, maxSwingSpeed);
 
-    // ── Rope visual ───────────────────────────────────────────────────────────
-
-    private void UpdateRopeVisual()
-    {
-        if (ropeRenderer == null || _segments.Count < 2) return;
-
-        ropeRenderer.positionCount = _segments.Count;
-        for (int i = 0; i < _segments.Count; i++)
-            ropeRenderer.SetPosition(i, _segments[i]);
+        // Reset ascend speed AFTER use — must be called again next frame to persist
+        _currentAscendSpeed = 0f;
     }
 }
