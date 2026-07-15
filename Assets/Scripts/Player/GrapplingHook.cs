@@ -102,6 +102,17 @@ public class GrapplingHook : MonoBehaviour
             return;
         }
 
+        // Never attach to this player or another player character. This also
+        // protects against hitting the local character's own model/colliders.
+        bool isPlayer = hit.collider.CompareTag("Player")
+            || hit.collider.transform.root == transform.root
+            || hit.collider.GetComponentInParent<PlayerCharacter>() != null;
+        if (isPlayer)
+        {
+            Debug.Log("[Grapple] Fire rejected — player targets are not grappleable.");
+            return;
+        }
+
         _anchor = hit.point;
         _ropeLength = Vector3.Distance(transform.position, _anchor);
         _isGrappling = true;
@@ -141,31 +152,38 @@ public class GrapplingHook : MonoBehaviour
     {
         if (!_isGrappling) return;
 
-        var anchor = _anchorRb != null ? _anchorRb.position : _anchor;
+        // A dynamic Rigidbody is reeled toward the player by Ascend(). Do not
+        // constrain, accelerate, or cap the player's velocity in that mode:
+        // normal air movement, input, and existing momentum remain untouched.
+        if (_anchorRb != null)
+        {
+            _currentAscendSpeed = 0f;
+            return;
+        }
+
+        var anchor = _anchor;
         var toPlayer = transform.position - anchor;
         float dist = toPlayer.magnitude;
         if (dist < 0.01f) return;
 
         var ropeDir = toPlayer.normalized; // anchor → player
 
-        // ── Ascend override — ONLY non-zero on frames Ascend() was called ─────
-        // This is applied BEFORE the pendulum logic and directly sets the
-        // rope-direction component of velocity. When _currentAscendSpeed is 0
-        // (button not held this frame), this line does nothing at all.
+        // ── Ascend pull — ONLY non-zero on frames Ascend() was called ─────────
+        // Add a pull component instead of replacing the rope-direction velocity.
+        // PlayerCharacter has already applied normal air input and momentum by
+        // this point, so both remain available while reeling toward a static
+        // anchor.
         if (_currentAscendSpeed > 0f && _anchorRb == null)
         {
-            // Remove existing rope-direction velocity, replace with ascend speed
-            float existing = Vector3.Dot(currentVelocity, ropeDir);
-            currentVelocity -= ropeDir * existing;
             currentVelocity -= ropeDir * _currentAscendSpeed; // move toward anchor
 
-            // Shrink rope length to match so taut constraint doesn't fight this
+            // Shorten the rope without discarding any tangential movement.
             _ropeLength = Mathf.Max(1f, dist - _currentAscendSpeed * deltaTime);
         }
 
         // ── Taut constraint ───────────────────────────────────────────────────
         float err = dist - _ropeLength;
-        if (Mathf.Abs(err) > 0.01f)
+        if (err > 0.01f)
             currentVelocity -= ropeDir * (err / deltaTime) * 0.5f;
 
         // ── Pendulum: remove outward velocity ─────────────────────────────────

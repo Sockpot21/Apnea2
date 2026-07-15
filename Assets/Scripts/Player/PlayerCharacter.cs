@@ -711,6 +711,12 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     {
         if (!_requestedJump) return;
 
+        if (_state.Stance is Stance.Prone)
+        {
+            _requestedJump = false;
+            return;
+        }
+
         if (isWallRun)
         {
             _requestedJump = false;
