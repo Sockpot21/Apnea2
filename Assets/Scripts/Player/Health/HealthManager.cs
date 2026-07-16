@@ -19,6 +19,13 @@ public class RuntimeSubPart
     public float maxHealth;
     public float currentHealth;
     public float breachThreshold;
+    public bool requiresBiofluid;
+    public float biofluidRequirement;
+    public bool producesBiofluid;
+    public float biofluidProductionRate;
+    public bool pumpsBiofluid;
+    public float biofluidPumpEfficiency;
+    public float healingRate;
 
     public Dictionary<DamageType, float> resistanceMap = new Dictionary<DamageType, float>();
 
@@ -40,7 +47,14 @@ public class RuntimeSubPart
             organHitChance = def.organHitChance,
             maxHealth = def.maxHealth,
             currentHealth = def.maxHealth,
-            breachThreshold = def.breachThreshold
+            breachThreshold = def.breachThreshold,
+            requiresBiofluid = def.requiresBiofluid,
+            biofluidRequirement = def.biofluidRequirement,
+            producesBiofluid = def.producesBiofluid,
+            biofluidProductionRate = def.biofluidProductionRate,
+            pumpsBiofluid = def.pumpsBiofluid,
+            biofluidPumpEfficiency = def.biofluidPumpEfficiency,
+            healingRate = def.healingRate
         };
 
         foreach (var entry in def.resistances)
@@ -141,6 +155,10 @@ public class HealthManager : MonoBehaviour
     private Dictionary<BodyPart, RuntimeBodyPart> _body = new();
     private Dictionary<Collider, BodyPart> _colliderMap = new();
     private readonly List<InstalledAugmentEffect> _installedAugmentEffects = new();
+    private float _currentBiofluid;
+
+    public float CurrentBiofluid => _currentBiofluid;
+    public float TotalBiofluidRequired => CalculateBiofluidRequirement();
 
     private class InstalledAugmentEffect
     {
@@ -169,11 +187,14 @@ public class HealthManager : MonoBehaviour
         playerHealth?.OnBodyInitialised(_body);
     }
 
+    private void Update() => UpdateBiofluid(Time.deltaTime);
+
     private void InitialiseBody()
     {
         _body.Clear();
         foreach (var def in augmentDb.bodyParts)
             _body[def.bodyPart] = RuntimeBodyPart.FromDefinition(def);
+        _currentBiofluid = CalculateBiofluidRequirement();
     }
 
     private void BuildColliderMap()
@@ -460,9 +481,87 @@ public class HealthManager : MonoBehaviour
         playerCharacter.ApplyAugmentStatOverrides(activeOverrides);
     }
 
+    private void UpdateBiofluid(float deltaTime)
+    {
+        float capacity = CalculateBiofluidRequirement();
+        if (capacity <= 0f)
+        {
+            _currentBiofluid = 0f;
+            return;
+        }
+
+        _currentBiofluid = Mathf.Min(capacity, _currentBiofluid + CalculateBiofluidProduction() * deltaTime);
+        float pumpEfficiency = CalculatePumpEfficiency();
+        if (pumpEfficiency <= 0f) return;
+
+        var healedParts = new HashSet<BodyPart>();
+        foreach (var pair in _body)
+        {
+            foreach (RuntimeSubPart subPart in EnumerateSubParts(pair.Value))
+            {
+                if (subPart.IsDestroyed || subPart.healingRate <= 0f
+                    || subPart.currentHealth >= subPart.maxHealth)
+                    continue;
+
+                float healing = Mathf.Min(subPart.maxHealth - subPart.currentHealth,
+                    subPart.healingRate * pumpEfficiency * deltaTime);
+                if (subPart.requiresBiofluid && subPart.biofluidRequirement > 0f)
+                {
+                    float biofluidPerHealth = subPart.biofluidRequirement / Mathf.Max(subPart.maxHealth, Mathf.Epsilon);
+                    healing = Mathf.Min(healing, _currentBiofluid / biofluidPerHealth);
+                    _currentBiofluid -= healing * biofluidPerHealth;
+                }
+
+                if (healing <= 0f) continue;
+                subPart.currentHealth += healing;
+                healedParts.Add(pair.Key);
+            }
+        }
+
+        if (healedParts.Count > 0)
+            playerHealth?.OnBodyRegenerated(_body, healedParts);
+    }
+
+    private float CalculateBiofluidRequirement()
+    {
+        float total = 0f;
+        foreach (var pair in _body)
+            foreach (RuntimeSubPart subPart in EnumerateSubParts(pair.Value))
+                if (!subPart.IsDestroyed && subPart.requiresBiofluid)
+                    total += Mathf.Max(0f, subPart.biofluidRequirement);
+        return total;
+    }
+
+    private float CalculateBiofluidProduction()
+    {
+        float production = 0f;
+        foreach (var pair in _body)
+            foreach (RuntimeSubPart subPart in EnumerateSubParts(pair.Value))
+                if (!subPart.IsDestroyed && subPart.producesBiofluid)
+                    production += Mathf.Max(0f, subPart.biofluidProductionRate);
+        return production;
+    }
+
+    private float CalculatePumpEfficiency()
+    {
+        float efficiency = 0f;
+        foreach (var pair in _body)
+            foreach (RuntimeSubPart subPart in EnumerateSubParts(pair.Value))
+                if (!subPart.IsDestroyed && subPart.pumpsBiofluid)
+                    efficiency += Mathf.Max(0f, subPart.biofluidPumpEfficiency);
+        return efficiency;
+    }
+
+    private static IEnumerable<RuntimeSubPart> EnumerateSubParts(RuntimeBodyPart bodyPart)
+    {
+        foreach (RuntimeSubPart layer in bodyPart.layers) yield return layer;
+        foreach (RuntimeSubPart organ in bodyPart.organs) yield return organ;
+    }
+
     private void EvaluateInjuryConsequences()
     {
-        if (IsSubPartDestroyed(BodyPart.Head, SubPartCategory.Brain)
+        if (HasDestroyedBiofluidPump()
+            || IsSubPartDestroyed(BodyPart.Head, SubPartCategory.Brain)
             || HasZeroCondition(BodyPart.Head))
         {
             if (gameOverController == null) gameOverController = GetComponent<GameOverController>();
@@ -487,6 +586,14 @@ public class HealthManager : MonoBehaviour
     }
 
     private bool HasArmFailure(BodyPart part) => HasZeroCondition(part);
+
+    private bool HasDestroyedBiofluidPump()
+    {
+        foreach (var pair in _body)
+            foreach (RuntimeSubPart subPart in EnumerateSubParts(pair.Value))
+                if (subPart.pumpsBiofluid && subPart.IsDestroyed) return true;
+        return false;
+    }
 
     private bool HasZeroCondition(BodyPart part) =>
         _body.TryGetValue(part, out RuntimeBodyPart bodyPart) && bodyPart.ConditionRatio <= 0f;

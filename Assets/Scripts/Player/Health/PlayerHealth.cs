@@ -136,6 +136,19 @@ public class PlayerHealth : MonoBehaviour
         CheckDeath();
     }
 
+    /// <summary>Updates only the body-part rows changed by passive regeneration.</summary>
+    public void OnBodyRegenerated(Dictionary<BodyPart, RuntimeBodyPart> body,
+        IEnumerable<BodyPart> regeneratedParts)
+    {
+        foreach (BodyPart part in regeneratedParts)
+        {
+            if (!body.TryGetValue(part, out RuntimeBodyPart runtimePart)) continue;
+            var condition = BuildCondition(runtimePart);
+            _conditions[part] = condition;
+            OnBodyPartConditionChanged?.Invoke(condition);
+        }
+    }
+
     // ── Public read access ────────────────────────────────────────────────────
 
     /// <summary>Returns the condition snapshot for a given body part.</summary>

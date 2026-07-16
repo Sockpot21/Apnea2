@@ -1,0 +1,47 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ccfd940126f153c42828d3556af138bd, type: 3}
+  m_Name: AugmentItem
+  m_EditorClassIdentifier: Assembly-CSharp::ItemDefinition
+  itemID: Synth_Muscle_Forearm_L_Item
+  displayName: Synth Muscle Forearm Left
+  description: blah blah blah
+  itemType: 5
+  weight: 1
+  slotColor: {r: 0.3, g: 0.6, b: 1, a: 1}
+  icon: {fileID: 0}
+  worldPrefab: {fileID: 7509819107877005441, guid: 0ef15a60f600c5d4e867a035ee5c255f, type: 3}
+  weaponType: 0
+  handedness: 0
+  bulletPrefab: {fileID: 0}
+  bulletSpeed: 30
+  bulletDrop: 9.81
+  bulletLifetime: 5
+  aimFOV: 45
+  targetBodyPart: 0
+  layerStats:
+    subPartID: 
+    displayName: 
+    category: 0
+    isOrgan: 0
+    organHitChance: 0
+    maxHealth: 100
+    breachThreshold: 20
+    resistances: []
+    requiresBiofluid: 0
+    biofluidRequirement: 0
+    producesBiofluid: 0
+    biofluidProductionRate: 0
+    pumpsBiofluid: 0
+    biofluidPumpEfficiency: 1
+    healingRate: 0
+  augmentID: Synth_Muscle_Forearm_L

@@ -3,7 +3,8 @@ using System.Collections.Generic;
 using KinematicCharacterController;
 using UnityEngine;
 
-public enum CrouchInput { None, Toggle }
+public enum StanceCommand { None, Crouch, Prone, Sprint }
+enum StanceGoal { Stand, Crouch, Prone, Sprint }
 
 public enum Stance { Stand, Crouch, Slide, Sprint, WallRun, Prone }
 
@@ -13,9 +14,7 @@ public struct CharacterInput
     public Vector2 Move;
     public bool Jump;
     public bool JumpSustain;
-    public CrouchInput Crouch;
     public bool Sprint;
-    public bool Prone;
 }
 
 public struct CharacterState
@@ -123,10 +122,16 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     private bool _requestedJump;
     private bool _requestedSustainedJump;
     private bool _requestedCrouch;
-    private bool _requestedCrouchPress;
+    // KKC consumes input during FixedUpdate. Commands are latched by Player's
+    // input-action callbacks, so a press cannot be lost between simulation ticks.
+    // Assigning this value replaces any older unconsumed command: latest press wins.
+    private StanceCommand _queuedStanceCommand;
+    private StanceGoal _stanceGoal;
+    private bool _pendingProne;
+    private bool _pendingStand;
+    private bool _sprintSuppressed;
     private bool _requestedCrouchInAir;
     private bool _requestedSprint;
-    private bool _requestedProne;
     private bool _forcedCrawl;
 
     private float _timeSinceUngrounded;
@@ -174,6 +179,12 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     public CharacterState GetState() => _state;
     public CharacterState GetLastState() => _lastState;
 
+    public void QueueStanceCommand(StanceCommand command)
+    {
+        if (command is not StanceCommand.None)
+            _queuedStanceCommand = command;
+    }
+
     public void SetForcedCrawl(bool forced)
     {
         _forcedCrawl = forced;
@@ -185,6 +196,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     {
         CaptureBaseAugmentStats();
         _state.Stance = Stance.Stand;
+        _stanceGoal = StanceGoal.Stand;
         _lastState = _state;
         _uncrouchOverlapResults = new Collider[8];
         _doubleJumpAvailable = doubleJumpEnabled;
@@ -317,18 +329,8 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         if (_requestedJump && !wasJump) _timeSinceJumpRequested = 0f;
         _requestedSustainedJump = input.JumpSustain;
 
-        var wasCrouch = _requestedCrouch;
-        _requestedCrouchPress = input.Crouch is CrouchInput.Toggle;
-        _requestedCrouch = input.Crouch switch
-        {
-            CrouchInput.Toggle => !_requestedCrouch,
-            _ => _requestedCrouch
-        };
-        if (_requestedCrouch && !wasCrouch) _requestedCrouchInAir = !_state.Grounded;
-        else if (!_requestedCrouch && !wasCrouch) _requestedCrouchInAir = false;
-
         _requestedSprint = sprintEnabled && input.Sprint;
-        _requestedProne = input.Prone;
+        if (!_requestedSprint) _sprintSuppressed = false;
     }
 
     // ── Body ──────────────────────────────────────────────────────────────────
@@ -364,69 +366,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         _touchingWall = false;
         _currentWallNormal = Vector3.zero;
 
-        // ── Prone ─────────────────────────────────────────────────────────────
-        if (_forcedCrawl)
-        {
-            _requestedProne = false;
-            if (_state.Stance is not Stance.Prone) EnterProne();
-        }
-        else if (_requestedProne)
-        {
-            _requestedProne = false;
-            switch (_state.Stance)
-            {
-                case Stance.Stand:
-                case Stance.Sprint:
-                    _requestedCrouch = true;
-                    EnterCrouch();
-                    break;
-                case Stance.Crouch:
-                    if (_state.Grounded) EnterProne();
-                    break;
-                case Stance.Prone:
-                    _requestedCrouch = false;
-                    TryStand();
-                    break;
-                case Stance.Slide:
-                    if (_state.Grounded)
-                    {
-                        _requestedCrouch = true;
-                        EnterProne();
-                    }
-                    break;
-            }
-        }
-
-        // Crouch from prone always returns to crouch, rather than toggling the
-        // persistent crouch request into an unrelated state.
-        if (_requestedCrouchPress && _state.Stance is Stance.Prone && !_forcedCrawl)
-        {
-            ExitProne();
-            _requestedCrouch = true;
-        }
-        _requestedCrouchPress = false;
-
-        // ── Sprint ────────────────────────────────────────────────────────────
-        if (_requestedSprint && !_forcedCrawl)
-        {
-            if (_state.Stance is Stance.Prone)
-            {
-                ExitProne();
-                _requestedCrouch = false;
-                TryStand();
-            }
-            else if (_state.Stance is Stance.Crouch) TryStand();
-        }
-        if (_requestedSprint && _state.Grounded && _state.Stance is Stance.Stand
-            && _requestedMovement.sqrMagnitude > 0f)
-            _state.Stance = Stance.Sprint;
-        if (_state.Stance is Stance.Sprint
-            && (!_requestedSprint || _requestedMovement.sqrMagnitude <= 0f || !_state.Grounded))
-            _state.Stance = Stance.Stand;
-
-        // ── Crouch ────────────────────────────────────────────────────────────
-        if (_requestedCrouch && _state.Stance is Stance.Stand or Stance.Sprint)
-            EnterCrouch();
+        ProcessStanceInput();
 
         // ── Wall run cooldown ─────────────────────────────────────────────────
         if (_wallRunCooldownTimer > 0f) _wallRunCooldownTimer -= deltaTime;
@@ -496,6 +436,226 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
 
     // ── Post ground update ────────────────────────────────────────────────────
 
+    private void ProcessStanceInput()
+    {
+        if (_forcedCrawl)
+        {
+            _queuedStanceCommand = StanceCommand.None;
+            _pendingProne = false;
+            _pendingStand = false;
+            _requestedCrouch = true;
+            _stanceGoal = StanceGoal.Prone;
+            if (_state.Stance is not Stance.Prone) EnterProne();
+            return;
+        }
+
+        StanceCommand command = _queuedStanceCommand;
+        _queuedStanceCommand = StanceCommand.None;
+
+        // Each command replaces unfinished work from an older command. The
+        // movement state still advances through mandatory intermediate stances.
+        switch (command)
+        {
+            case StanceCommand.Crouch:
+                _pendingProne = false;
+                _pendingStand = false;
+                _stanceGoal = _stanceGoal is StanceGoal.Crouch
+                    ? StanceGoal.Stand
+                    : StanceGoal.Crouch;
+                if (_stanceGoal is StanceGoal.Stand) CommitStandCommand();
+                else CommitCrouchCommand();
+                break;
+            case StanceCommand.Prone:
+                _pendingProne = false;
+                _pendingStand = false;
+                _stanceGoal = _stanceGoal is StanceGoal.Prone
+                    ? StanceGoal.Stand
+                    : StanceGoal.Prone;
+                if (_stanceGoal is StanceGoal.Stand) CommitStandCommand();
+                else CommitProneCommand();
+                break;
+            case StanceCommand.Sprint:
+                _pendingProne = false;
+                _pendingStand = false;
+                _stanceGoal = StanceGoal.Sprint;
+                _sprintSuppressed = false;
+                CommitSprintCommand();
+                break;
+            default:
+                if (_requestedJump && _state.Stance is Stance.Prone)
+                {
+                    _requestedJump = false;
+                    _pendingProne = false;
+                    _pendingStand = true;
+                    _requestedCrouch = false;
+                    _stanceGoal = StanceGoal.Stand;
+                    ExitProne(); // Prone jump is a stand-up command, never an actual jump.
+                }
+                else
+                {
+                    // A prone command issued just before landing remains the
+                    // active goal until KKC reports stable ground.
+                    if (_stanceGoal is StanceGoal.Prone
+                        && !_pendingProne
+                        && _state.Stance is not Stance.Prone)
+                        CommitProneCommand();
+
+                    ResolvePendingStance();
+                    CommitSprintCommand();
+                }
+                break;
+        }
+    }
+
+    private void CommitCrouchCommand()
+    {
+        _sprintSuppressed = true;
+        if (!_requestedCrouch)
+            _requestedCrouchInAir = !_state.Grounded;
+
+        switch (_state.Stance)
+        {
+            case Stance.Sprint:
+                _requestedCrouch = true;
+                EnterCrouch();
+                _state.Stance = Stance.Slide; // sprint crouch always commits to slide
+                break;
+            case Stance.Prone:
+                _requestedCrouch = true;
+                ExitProne();
+                break;
+            case Stance.Slide:
+                _requestedCrouch = true;
+                _state.Stance = Stance.Crouch;
+                break;
+            case Stance.WallRun:
+                _requestedCrouch = true;
+                ExitWallRun();
+                EnterCrouch();
+                break;
+            case Stance.Crouch:
+                _requestedCrouch = true;
+                break;
+            default:
+                _requestedCrouch = true;
+                EnterCrouch();
+                break;
+        }
+    }
+
+    private void CommitStandCommand()
+    {
+        _requestedCrouch = false;
+        switch (_state.Stance)
+        {
+            case Stance.Prone:
+                _pendingStand = true;
+                ExitProne(); // prone → crouch → stand
+                break;
+            case Stance.Slide:
+                _state.Stance = Stance.Crouch;
+                _pendingStand = true;
+                break;
+            case Stance.Crouch:
+                TryStand();
+                break;
+            case Stance.WallRun:
+                ExitWallRun();
+                TryStand();
+                break;
+            case Stance.Sprint:
+                _state.Stance = Stance.Stand;
+                break;
+        }
+    }
+
+    private void CommitProneCommand()
+    {
+        // KKC must report stable ground before changing into the prone capsule.
+        // The caller retains the prone goal if this cannot happen yet.
+        if (!_state.Grounded) return;
+
+        _sprintSuppressed = true;
+        _requestedCrouch = true;
+        switch (_state.Stance)
+        {
+            case Stance.Sprint:
+                EnterCrouch();
+                _state.Stance = Stance.Slide; // sprint → slide → prone
+                _pendingProne = true;
+                break;
+            case Stance.Stand:
+                EnterCrouch(); // walk/stand → crouch → prone
+                _pendingProne = true;
+                break;
+            case Stance.Crouch:
+                EnterProne();
+                break;
+            case Stance.Slide:
+                _pendingProne = true; // wait for slide velocity to finish
+                break;
+            case Stance.Prone:
+                _requestedCrouch = false;
+                _pendingStand = true;
+                ExitProne();
+                break;
+            case Stance.WallRun:
+                ExitWallRun();
+                EnterCrouch();
+                _pendingProne = true;
+                break;
+        }
+    }
+
+    private void ResolvePendingStance()
+    {
+        if (_pendingProne && _stanceGoal is StanceGoal.Prone
+            && _state.Grounded && _state.Stance is Stance.Crouch)
+        {
+            EnterProne();
+            _pendingProne = false;
+        }
+
+        if (_pendingStand && _stanceGoal is StanceGoal.Stand or StanceGoal.Sprint
+            && _state.Stance is Stance.Crouch)
+        {
+            TryStand();
+            if (_state.Stance is Stance.Stand) _pendingStand = false;
+        }
+    }
+
+    private void CommitSprintCommand()
+    {
+        if (_sprintSuppressed) return;
+
+        if (_requestedSprint)
+        {
+            switch (_state.Stance)
+            {
+                case Stance.Prone:
+                    _requestedCrouch = true;
+                    ExitProne(); // prone → crouch; held sprint advances next frame
+                    return;
+                case Stance.Crouch:
+                    _requestedCrouch = false;
+                    TryStand();
+                    break;
+                case Stance.Sprint:
+                    if (!_state.Grounded || _requestedMovement.sqrMagnitude <= 0f)
+                        _state.Stance = Stance.Stand;
+                    return;
+            }
+
+            if (_state.Stance is Stance.Stand && _state.Grounded
+                && _requestedMovement.sqrMagnitude > 0f)
+                _state.Stance = Stance.Sprint;
+        }
+        else if (_state.Stance is Stance.Sprint)
+        {
+            _state.Stance = Stance.Stand;
+        }
+    }
+
     public void PostGroundUpdate(float deltaTime)
     {
         if (!motor.GroundingStatus.IsStableOnGround && _state.Stance is Stance.Slide)
@@ -513,7 +673,9 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
 
     public void AfterCharacterUpdate(float deltaTime)
     {
-        bool wantToStand = !_requestedCrouch
+        bool wantToStand = _stanceGoal is StanceGoal.Stand
+            && !_requestedCrouch
+            && !_pendingStand
             && _state.Stance is not Stance.Stand
             && _state.Stance is not Stance.Sprint
             && _state.Stance is not Stance.WallRun
@@ -568,7 +730,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
             bool wasSprinting = _lastState.Stance is Stance.Sprint;
             bool wasInAir = !_lastState.Grounded;
 
-            if (moving && crouching && (wasStanding || wasSprinting || wasInAir))
+            if (moving && crouching && !_pendingProne && (wasStanding || wasSprinting || wasInAir))
             {
                 _state.Stance = Stance.Slide;
                 if (wasInAir)

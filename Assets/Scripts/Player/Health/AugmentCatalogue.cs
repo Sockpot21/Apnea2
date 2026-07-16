@@ -86,10 +86,24 @@ public class AugmentCatalogue : ScriptableObject
 
     public AugmentEntry GetAugment(string id)
     {
-        foreach (var e in augments)
-            if (e.augmentID == id) return e;
+        if (TryGetAugment(id, out AugmentEntry augment)) return augment;
         Debug.LogWarning($"[AugmentCatalogue] No augment found with ID '{id}'");
         return null;
+    }
+
+    public bool TryGetAugment(string id, out AugmentEntry augment)
+    {
+        foreach (AugmentEntry entry in augments)
+        {
+            if (entry.augmentID == id)
+            {
+                augment = entry;
+                return true;
+            }
+        }
+
+        augment = null;
+        return false;
     }
 
     public List<AugmentEntry> GetAugmentsForBodyPart(BodyPart part)

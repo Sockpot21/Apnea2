@@ -32,6 +32,9 @@ public class Player : MonoBehaviour
     {
         _inputActions = new PlayerInput();
         _inputActions.Enable();
+        _inputActions.Gameplay.Crouch.performed += OnCrouchPressed;
+        _inputActions.Gameplay.Prone.performed += OnPronePressed;
+        _inputActions.Gameplay.Sprint.performed += OnSprintPressed;
         GetComponent<PlayerInteraction>()?.SetInputActions(_inputActions);
         playerCharacter.Initialize();
         playerCamera.Initialize(playerCharacter.GetCameraTarget());
@@ -41,7 +44,24 @@ public class Player : MonoBehaviour
         stanceVignette.Initialize(volume.profile);
     }
 
-    private void OnDestroy() => _inputActions.Dispose();
+    private void OnDestroy()
+    {
+        if (_inputActions == null) return;
+
+        _inputActions.Gameplay.Crouch.performed -= OnCrouchPressed;
+        _inputActions.Gameplay.Prone.performed -= OnPronePressed;
+        _inputActions.Gameplay.Sprint.performed -= OnSprintPressed;
+        _inputActions.Dispose();
+    }
+
+    private void OnCrouchPressed(InputAction.CallbackContext _) =>
+        playerCharacter.QueueStanceCommand(StanceCommand.Crouch);
+
+    private void OnPronePressed(InputAction.CallbackContext _) =>
+        playerCharacter.QueueStanceCommand(StanceCommand.Prone);
+
+    private void OnSprintPressed(InputAction.CallbackContext _) =>
+        playerCharacter.QueueStanceCommand(StanceCommand.Sprint);
 
     private void Update()
     {
@@ -60,10 +80,7 @@ public class Player : MonoBehaviour
             Move = input.Move.ReadValue<Vector2>(),
             Jump = input.Jump.WasPressedThisFrame(),
             JumpSustain = input.Jump.IsPressed(),
-            Crouch = input.Crouch.WasPressedThisFrame()
-                          ? CrouchInput.Toggle : CrouchInput.None,
-            Sprint = input.Sprint.IsPressed(),
-            Prone = input.Prone.WasPressedThisFrame()
+            Sprint = input.Sprint.IsPressed()
         };
         playerCharacter.UpdateInput(characterInput);
         playerCharacter.UpdateBody(deltaTime);

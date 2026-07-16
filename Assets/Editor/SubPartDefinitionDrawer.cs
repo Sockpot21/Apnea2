@@ -13,7 +13,12 @@ public class SubPartDefinitionDrawer : PropertyDrawer
 
         const float gap = 2f;
         float height = EditorGUIUtility.singleLineHeight + gap;
-        string[] alwaysShown = { "subPartID", "displayName", "category", "isOrgan", "maxHealth" };
+        string[] alwaysShown =
+        {
+            "subPartID", "displayName", "category", "isOrgan", "maxHealth",
+            "requiresBiofluid", "biofluidRequirement", "producesBiofluid", "biofluidProductionRate",
+            "pumpsBiofluid", "biofluidPumpEfficiency", "healingRate"
+        };
         foreach (string name in alwaysShown)
             height += EditorGUI.GetPropertyHeight(property.FindPropertyRelative(name), true) + gap;
 
@@ -58,6 +63,13 @@ public class SubPartDefinitionDrawer : PropertyDrawer
         DrawField(ref y, position, property, "category", "Category", gap);
         DrawField(ref y, position, property, "isOrgan", "Is Organ", gap);
         DrawField(ref y, position, property, "maxHealth", "Max Health", gap);
+        DrawField(ref y, position, property, "requiresBiofluid", "Requires Biofluid", gap);
+        DrawField(ref y, position, property, "biofluidRequirement", "Biofluid Requirement", gap);
+        DrawField(ref y, position, property, "producesBiofluid", "Produces Biofluid", gap);
+        DrawField(ref y, position, property, "biofluidProductionRate", "Biofluid Production / Sec", gap);
+        DrawField(ref y, position, property, "pumpsBiofluid", "Pumps Biofluid (Vital)", gap);
+        DrawField(ref y, position, property, "biofluidPumpEfficiency", "Pump Efficiency", gap);
+        DrawField(ref y, position, property, "healingRate", "Healing / Sec", gap);
 
         if (property.FindPropertyRelative("isOrgan").boolValue)
             DrawField(ref y, position, property, "organHitChance", "Organ Hit Chance", gap);

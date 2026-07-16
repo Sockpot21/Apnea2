@@ -12,7 +12,8 @@ public enum ItemType
     Weapon,
     Armour,
     Consumable,
-    Quest
+    Quest,
+    Augment
 }
 
 public enum WeaponType
@@ -77,11 +78,18 @@ public class ItemDefinition : ScriptableObject
     public BodyPart targetBodyPart;
     public SubPartDefinition layerStats;
 
+    // ── Augment fields (shown when itemType == Augment) ──────────────────────
+
+    [Tooltip("ID of the AugmentEntry in the assigned AugmentCatalogue. " +
+             "Use this ItemDefinition on a PickupItem world GameObject.")]
+    public string augmentID;
+
     // ── Convenience helpers ───────────────────────────────────────────────────
 
     public bool IsArmour => itemType == ItemType.Armour;
     public bool IsWeapon => itemType == ItemType.Weapon;
     public bool IsConsumable => itemType == ItemType.Consumable;
+    public bool IsAugment => itemType == ItemType.Augment;
     public bool IsRanged => itemType == ItemType.Weapon && weaponType == WeaponType.Ranged;
     public bool IsTwoHanded => itemType == ItemType.Weapon && handedness == Handedness.TwoHanded;
 }

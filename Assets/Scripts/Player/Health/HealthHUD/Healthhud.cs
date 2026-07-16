@@ -11,6 +11,7 @@ public class HealthHUD : MonoBehaviour
 {
     [Header("References")]
     [SerializeField] private PlayerHealth playerHealth;
+    [SerializeField] private HealthManager healthManager;
     [SerializeField] private RectTransform hudPanel;
 
     [Header("Bar Style")]
@@ -47,11 +48,16 @@ public class HealthHUD : MonoBehaviour
     private readonly List<Entry> _entries = new();
     private bool _initialised = false;
     private bool _panelReady = false;
+    private TextMeshProUGUI _biofluidLabel;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     private void OnEnable()
     {
+        if (healthManager == null)
+            healthManager = GetComponent<HealthManager>() ?? GetComponentInParent<HealthManager>();
+        if (healthManager == null && playerHealth != null)
+            healthManager = playerHealth.GetComponent<HealthManager>();
         if (playerHealth == null) return;
         playerHealth.OnBodyStateUpdated += OnBodyStateUpdated;
         playerHealth.OnBodyPartConditionChanged += OnPartChanged;
@@ -62,6 +68,12 @@ public class HealthHUD : MonoBehaviour
         if (playerHealth == null) return;
         playerHealth.OnBodyStateUpdated -= OnBodyStateUpdated;
         playerHealth.OnBodyPartConditionChanged -= OnPartChanged;
+    }
+
+    private void Update()
+    {
+        if (_biofluidLabel == null || healthManager == null) return;
+        _biofluidLabel.text = $"BIOFLUID  {healthManager.CurrentBiofluid:F0} / {healthManager.TotalBiofluidRequired:F0}";
     }
 
     // ── Events ────────────────────────────────────────────────────────────────
@@ -111,6 +123,16 @@ public class HealthHUD : MonoBehaviour
         if (csf == null) csf = hudPanel.gameObject.AddComponent<ContentSizeFitter>();
         csf.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
         csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        var biofluid = new GameObject("BiofluidLabel");
+        biofluid.transform.SetParent(hudPanel, false);
+        var labelRT = biofluid.AddComponent<RectTransform>();
+        labelRT.sizeDelta = new Vector2(labelWidth + layerWidth + barWidth + 12f, barHeight + 6f);
+        biofluid.AddComponent<LayoutElement>().preferredHeight = barHeight + 6f;
+        _biofluidLabel = biofluid.AddComponent<TextMeshProUGUI>();
+        _biofluidLabel.fontSize = labelFontSize;
+        _biofluidLabel.color = new Color(0.85f, 0.2f, 0.2f, 1f);
+        _biofluidLabel.alignment = TextAlignmentOptions.MidlineLeft;
     }
 
     // ── Build one row ─────────────────────────────────────────────────────────

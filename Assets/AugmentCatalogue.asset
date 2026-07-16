@@ -19,13 +19,13 @@ MonoBehaviour:
       slash and blunt resistance.
     category: 1
     targetBodyPart: 5
+    isSubPartAugment: 1
     definition:
       displayName: 
       bodyPart: 0
       category: 0
       description: 
       subParts: []
-    isSubPartAugment: 1
     targetSubPartCategory: 1
     subPartDefinition:
       subPartID: synth_muscle_forearm_L
@@ -46,19 +46,27 @@ MonoBehaviour:
         multiplier: 1.4
       - damageType: 4
         multiplier: 1.6
+      requiresBiofluid: 0
+      biofluidRequirement: 0
+      producesBiofluid: 0
+      biofluidProductionRate: 0
+      pumpsBiofluid: 0
+      biofluidPumpEfficiency: 1
+      healingRate: 0
+    statOverrides: []
   - augmentID: Poo fart Mod
     displayName: Synthetic Muscle Fibre (Left Forearm)
     description: Augmented muscle replacement. Higher HP, lower breach. Improved
       slash and blunt resistance.
     category: 1
     targetBodyPart: 5
+    isSubPartAugment: 1
     definition:
       displayName: 
       bodyPart: 0
       category: 0
       description: 
       subParts: []
-    isSubPartAugment: 1
     targetSubPartCategory: 1
     subPartDefinition:
       subPartID: synth_muscle_forearm_L
@@ -79,19 +87,27 @@ MonoBehaviour:
         multiplier: 1.4
       - damageType: 4
         multiplier: 1.6
+      requiresBiofluid: 0
+      biofluidRequirement: 0
+      producesBiofluid: 0
+      biofluidProductionRate: 0
+      pumpsBiofluid: 0
+      biofluidPumpEfficiency: 1
+      healingRate: 0
+    statOverrides: []
   - augmentID: Nicole Watterson's fat ass
     displayName: Synthetic Muscle Fibre (Left Forearm)
     description: Augmented muscle replacement. Higher HP, lower breach. Improved
       slash and blunt resistance.
     category: 1
     targetBodyPart: 5
+    isSubPartAugment: 1
     definition:
       displayName: 
       bodyPart: 0
       category: 0
       description: 
       subParts: []
-    isSubPartAugment: 1
     targetSubPartCategory: 1
     subPartDefinition:
       subPartID: synth_muscle_forearm_L
@@ -112,19 +128,27 @@ MonoBehaviour:
         multiplier: 1.4
       - damageType: 4
         multiplier: 1.6
+      requiresBiofluid: 0
+      biofluidRequirement: 0
+      producesBiofluid: 0
+      biofluidProductionRate: 0
+      pumpsBiofluid: 0
+      biofluidPumpEfficiency: 1
+      healingRate: 0
+    statOverrides: []
   - augmentID: Synth_Bone_L
     displayName: Synthetic Muscle Fibre (Left Forearm)
     description: Augmented muscle replacement. Higher HP, lower breach. Improved
       slash and blunt resistance.
     category: 2
     targetBodyPart: 9
+    isSubPartAugment: 0
     definition:
       displayName: 
       bodyPart: 0
       category: 0
       description: 
       subParts: []
-    isSubPartAugment: 0
     targetSubPartCategory: 0
     subPartDefinition:
       subPartID: synth_muscle_forearm_L
@@ -145,3 +169,11 @@ MonoBehaviour:
         multiplier: 1.4
       - damageType: 4
         multiplier: 1.6
+      requiresBiofluid: 0
+      biofluidRequirement: 0
+      producesBiofluid: 0
+      biofluidProductionRate: 0
+      pumpsBiofluid: 0
+      biofluidPumpEfficiency: 1
+      healingRate: 0
+    statOverrides: []

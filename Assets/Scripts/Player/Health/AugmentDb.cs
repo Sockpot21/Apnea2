@@ -103,6 +103,26 @@ public class SubPartDefinition
 
     public List<ResistanceEntry> resistances = new List<ResistanceEntry>();
 
+    [Header("Biofluid")]
+    [Tooltip("Whether this sub-part consumes biofluid while regenerating.")]
+    public bool requiresBiofluid;
+    [Min(0f)]
+    [Tooltip("Total biofluid this sub-part requires when functional.")]
+    public float biofluidRequirement;
+    [Tooltip("Whether this sub-part produces biofluid for the body-wide pool.")]
+    public bool producesBiofluid;
+    [Min(0f)]
+    [Tooltip("Biofluid produced per second while functional.")]
+    public float biofluidProductionRate;
+    [Tooltip("A destroyed biofluid pump is a vital failure.")]
+    public bool pumpsBiofluid;
+    [Min(0f)]
+    [Tooltip("Multiplier applied to all sub-part regeneration while functional.")]
+    public float biofluidPumpEfficiency = 1f;
+    [Min(0f)]
+    [Tooltip("Health restored per second before pump efficiency.")]
+    public float healingRate;
+
     public float GetMultiplier(DamageType type)
     {
         foreach (var e in resistances)
