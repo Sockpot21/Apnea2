@@ -24,6 +24,8 @@ public class GrapplingHook : MonoBehaviour
 
     [Header("Visual")]
     [SerializeField] private LineRenderer ropeRenderer;
+    [SerializeField] private float ropeWidth = 0.03f;
+    [SerializeField] private Color ropeColor = new Color(0.05f, 0.05f, 0.05f, 1f);
 
     // ── Public ────────────────────────────────────────────────────────────────
 
@@ -41,6 +43,32 @@ public class GrapplingHook : MonoBehaviour
     // this frame. This guarantees zero residual the instant the button releases.
     private float _ascendTimer = 0f;
     private float _currentAscendSpeed = 0f; // 0 unless Ascend() called THIS frame
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    private void Awake()
+    {
+        if (ropeRenderer == null) return;
+
+        // Magenta rope = no material assigned (falls back to the broken/error
+        // shader). Assign a simple unlit material at runtime so this works
+        // regardless of what's set in the Inspector.
+        if (ropeRenderer.sharedMaterial == null)
+        {
+            var shader = Shader.Find("Universal Render Pipeline/Unlit")
+                         ?? Shader.Find("Sprites/Default");
+            ropeRenderer.material = new Material(shader);
+        }
+
+        ropeRenderer.widthMultiplier = ropeWidth;
+        ropeRenderer.startWidth = ropeWidth;
+        ropeRenderer.endWidth = ropeWidth;
+        ropeRenderer.startColor = ropeColor;
+        ropeRenderer.endColor = ropeColor;
+        ropeRenderer.material.color = ropeColor;
+        ropeRenderer.numCapVertices = 4;
+        ropeRenderer.enabled = false;
+    }
 
     // ── Public API ────────────────────────────────────────────────────────────
 
