@@ -16,11 +16,12 @@ public class PlayerEquipment : MonoBehaviour
 
     // ── Runtime state ─────────────────────────────────────────────────────────
 
-    private Dictionary<BodyPart, ItemDefinition> _armourSlots = new();
+    private Dictionary<BodyPart, ItemInstance> _armourSlots = new();
     private Dictionary<BodyPart, RuntimeSubPart> _armourLayers = new();
 
-    private ItemDefinition _leftHand;
-    private ItemDefinition _rightHand;
+    private ItemInstance _leftHand;
+    private ItemInstance _rightHand;
+    private ItemInstance _bag;
     private readonly HashSet<HandSlot> _disabledHands = new();
 
     // Muzzle points — found on instantiated weapon prefabs
@@ -39,11 +40,10 @@ public class PlayerEquipment : MonoBehaviour
 
     // Properties read by CameraFOV
     public bool IsAiming => _isAiming;
-    public float AimFOV => GetAimingWeapon()?.aimFOV ?? 45f;
+    public float AimFOV => GetAimingWeapon()?.definition.aimFOV ?? 45f;
     public bool HasRangedWeapon =>
-        (_rightHand != null && _rightHand.IsRanged) ||
-        (_leftHand != null && _leftHand.IsRanged);
-
+        (_rightHand != null && _rightHand.definition.IsRanged) ||
+        (_leftHand != null && _leftHand.definition.IsRanged);
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     private void Awake()
@@ -54,30 +54,33 @@ public class PlayerEquipment : MonoBehaviour
 
     // ── Public read access ────────────────────────────────────────────────────
 
-    public ItemDefinition GetArmourSlot(BodyPart part)
+    public ItemInstance GetArmourSlot(BodyPart part)
     {
         _armourSlots.TryGetValue(part, out var item);
         return item;
     }
 
-    public ItemDefinition GetHandSlot(HandSlot hand) =>
+    public ItemInstance GetHandSlot(HandSlot hand) =>
         hand == HandSlot.Left ? _leftHand : _rightHand;
+
+    public ItemInstance GetBagSlot() => _bag;
+
 
     // ── Armour equip / unequip ────────────────────────────────────────────────
 
-    public bool TryEquipArmour(ItemDefinition item)
+    public bool TryEquipArmour(ItemInstance item)
     {
-        if (!item.IsArmour)
+        if (!item.definition.IsArmour)
         {
-            Debug.LogWarning($"[Equipment] '{item.displayName}' is not an armour item.");
+            Debug.LogWarning($"[Equipment] '{item.definition.displayName}' is not an armour item.");
             return false;
         }
 
-        var part = item.targetBodyPart;
+        var part = item.definition.targetBodyPart;
         if (_armourSlots[part] != null)
             UnequipArmour(part);
 
-        var runtimeLayer = RuntimeSubPart.FromDefinition(item.layerStats);
+        var runtimeLayer = RuntimeSubPart.FromDefinition(item.definition.layerStats);
         runtimeLayer.category = SubPartCategory.Armour;
 
         var bodyPart = healthManager.GetBodyPart(part);
@@ -91,15 +94,13 @@ public class PlayerEquipment : MonoBehaviour
         _armourSlots[part] = item;
         _armourLayers[part] = runtimeLayer;
 
-        Debug.Log($"[Equipment] Armour equipped: '{item.displayName}' → {part}.");
+        Debug.Log($"[Equipment] Armour equipped: '{item.definition.displayName}' → {part}.");
         OnEquipmentChanged?.Invoke();
         return true;
     }
 
     public void UnequipArmour(BodyPart part)
     {
-        if (_armourSlots[part] == null) return;
-
         var item = _armourSlots[part];
         var bodyPart = healthManager.GetBodyPart(part);
 
@@ -109,21 +110,20 @@ public class PlayerEquipment : MonoBehaviour
             bodyPart.layers.Remove(layer);
             _armourLayers.Remove(part);
             Debug.Log(destroyed
-                ? $"[Equipment] '{item.displayName}' destroyed — returned broken."
-                : $"[Equipment] '{item.displayName}' unequipped from {part}.");
+                ? $"[Equipment] '{item.definition.displayName}' destroyed — returned broken."
+                : $"[Equipment] '{item.definition.displayName}' unequipped from {part}.");
         }
 
         _armourSlots[part] = null;
 
         if (!inventory.TryAdd(item))
-            Debug.LogWarning($"[Equipment] Inventory full — could not return '{item.displayName}'.");
-
+            Debug.LogWarning($"[Equipment] Inventory full — could not return '{item.definition.displayName}'.");
         OnEquipmentChanged?.Invoke();
     }
 
     // ── Hand equip / unequip ──────────────────────────────────────────────────
 
-    public bool TryEquipHand(ItemDefinition item, HandSlot hand)
+    public bool TryEquipHand(ItemInstance item, HandSlot hand)
     {
         if (_disabledHands.Contains(hand))
         {
@@ -131,13 +131,13 @@ public class PlayerEquipment : MonoBehaviour
             return false;
         }
 
-        if (!item.IsWeapon && !item.IsConsumable)
+        if (!item.definition.IsWeapon && !item.definition.IsConsumable)
         {
-            Debug.LogWarning($"[Equipment] '{item.displayName}' is not a weapon or consumable.");
+            Debug.LogWarning($"[Equipment] '{item.definition.displayName}' is not a weapon or consumable.");
             return false;
         }
 
-        if (item.IsTwoHanded)
+        if (item.definition.IsTwoHanded)
         {
             var requiredOtherHand = hand == HandSlot.Left ? HandSlot.Right : HandSlot.Left;
             if (_disabledHands.Contains(requiredOtherHand))
@@ -151,7 +151,7 @@ public class PlayerEquipment : MonoBehaviour
             _rightHand = item;
             RefreshMuzzle(HandSlot.Left);
             RefreshMuzzle(HandSlot.Right);
-            Debug.Log($"[Equipment] Two-handed '{item.displayName}' equipped.");
+            Debug.Log($"[Equipment] Two-handed '{item.definition.displayName}' equipped.");
             OnEquipmentChanged?.Invoke();
             return true;
         }
@@ -159,12 +159,12 @@ public class PlayerEquipment : MonoBehaviour
         // If other hand holds a two-handed weapon, clear both first
         var otherHand = hand == HandSlot.Left ? HandSlot.Right : HandSlot.Left;
         var otherHandItem = GetHandSlot(otherHand);
-        if (otherHandItem != null && otherHandItem.IsTwoHanded)
+        if (otherHandItem != null && otherHandItem.definition.IsTwoHanded)
         {
             _leftHand = null;
             _rightHand = null;
             if (!inventory.TryAdd(otherHandItem))
-                Debug.LogWarning($"[Equipment] Inventory full — lost '{otherHandItem.displayName}'.");
+                Debug.LogWarning($"[Equipment] Inventory full — lost '{otherHandItem.definition.displayName}'.");
         }
 
         if (GetHandSlot(hand) != null)
@@ -175,7 +175,7 @@ public class PlayerEquipment : MonoBehaviour
 
         RefreshMuzzle(hand);
 
-        Debug.Log($"[Equipment] '{item.displayName}' equipped in {hand} hand.");
+        Debug.Log($"[Equipment] '{item.definition.displayName}' equipped in {hand} hand.");
         OnEquipmentChanged?.Invoke();
         return true;
     }
@@ -185,7 +185,7 @@ public class PlayerEquipment : MonoBehaviour
         var item = GetHandSlot(hand);
         if (item == null) return;
 
-        if (item.IsTwoHanded)
+        if (item.definition.IsTwoHanded)
         {
             _leftHand = null;
             _rightHand = null;
@@ -202,30 +202,66 @@ public class PlayerEquipment : MonoBehaviour
         if (!HasRangedWeapon) _isAiming = false;
 
         if (!inventory.TryAdd(item))
-            Debug.LogWarning($"[Equipment] Inventory full — could not return '{item.displayName}'.");
+            Debug.LogWarning($"[Equipment] Inventory full — could not return '{item.definition.displayName}'.");
 
-        Debug.Log($"[Equipment] '{item.displayName}' unequipped from {hand} hand.");
+        Debug.Log($"[Equipment] '{item.definition.displayName}' unequipped from {hand} hand.");
         OnEquipmentChanged?.Invoke();
     }
 
     public void DisableHandAndDrop(HandSlot hand)
     {
         if (!_disabledHands.Add(hand)) return;
-
-        ItemDefinition item = GetHandSlot(hand);
+        ItemInstance item = GetHandSlot(hand);
         if (item != null)
         {
-            bool wasTwoHanded = item.IsTwoHanded;
+            bool wasTwoHanded = item.definition.IsTwoHanded;
             ClearHandItem(item);
             DropItem(item);
-
             if (wasTwoHanded)
-                Debug.Log($"[Equipment] Two-handed '{item.displayName}' dropped because {hand} arm failed.");
+                Debug.Log($"[Equipment] Two-handed '{item.definition.displayName}' dropped because {hand} arm failed.");
             else
-                Debug.Log($"[Equipment] '{item.displayName}' dropped because {hand} arm failed.");
+                Debug.Log($"[Equipment] '{item.definition.displayName}' dropped because {hand} arm failed.");
+        }
+        if (!HasRangedWeapon) _isAiming = false;
+        OnEquipmentChanged?.Invoke();
+    }
+
+    // ── Bag equip / unequip ───────────────────────────────────────────────────
+
+    public bool TryEquipBag(ItemInstance item)
+    {
+        if (!item.definition.IsBag)
+        {
+            Debug.LogWarning($"[Equipment] '{item.definition.displayName}' is not a bag.");
+            return false;
         }
 
-        if (!HasRangedWeapon) _isAiming = false;
+        if (_bag != null) UnequipBag();
+
+        _bag = item;
+        inventory.AddBonusSlots(item.definition.bagSlotCapacity);
+        Debug.Log($"[Equipment] Bag equipped: '{item.definition.displayName}' (+{item.definition.bagSlotCapacity} slots).");
+        OnEquipmentChanged?.Invoke();
+        return true;
+    }
+
+    public void UnequipBag()
+    {
+        if (_bag == null) return;
+
+        if (!inventory.RemoveBonusSlots(_bag.definition.bagSlotCapacity))
+        {
+            Debug.LogWarning($"[Equipment] Cannot unequip '{_bag.definition.displayName}' — empty the extra slots first.");
+            return;
+        }
+
+        var item = _bag;
+        _bag = null;
+
+        if (!inventory.TryAdd(item))
+            Debug.LogWarning($"[Equipment] Inventory full — could not return '{item.definition.displayName}'.");
+
+        Debug.Log($"[Equipment] Bag unequipped: '{item.definition.displayName}'.");
         OnEquipmentChanged?.Invoke();
     }
 
@@ -234,21 +270,27 @@ public class PlayerEquipment : MonoBehaviour
     public void UseLeftHand()
     {
         if (_leftHand == null) return;
-        if (_leftHand.IsRanged) Fire(HandSlot.Left);
-        else if (_leftHand.IsWeapon)
-            Debug.Log($"[Equipment] Melee attack: '{_leftHand.displayName}' (left). TODO: melee system.");
-        else if (_leftHand.IsConsumable)
-            Debug.Log($"[Equipment] Used consumable: '{_leftHand.displayName}' (left).");
+        if (_leftHand.definition.IsRanged) Fire(HandSlot.Left);
+        else if (_leftHand.definition.IsWeapon)
+        {
+            _leftHand.Degrade();
+            Debug.Log($"[Equipment] Melee attack: '{_leftHand.definition.displayName}' (left). TODO: melee system.");
+        }
+        else if (_leftHand.definition.IsConsumable)
+            Debug.Log($"[Equipment] Used consumable: '{_leftHand.definition.displayName}' (left).");
     }
 
     public void UseRightHand()
     {
         if (_rightHand == null) return;
-        if (_rightHand.IsRanged) Fire(HandSlot.Right);
-        else if (_rightHand.IsWeapon)
-            Debug.Log($"[Equipment] Melee attack: '{_rightHand.displayName}' (right). TODO: melee system.");
-        else if (_rightHand.IsConsumable)
-            Debug.Log($"[Equipment] Used consumable: '{_rightHand.displayName}' (right).");
+        if (_rightHand.definition.IsRanged) Fire(HandSlot.Right);
+        else if (_rightHand.definition.IsWeapon)
+        {
+            _rightHand.Degrade();
+            Debug.Log($"[Equipment] Melee attack: '{_rightHand.definition.displayName}' (right). TODO: melee system.");
+        }
+        else if (_rightHand.definition.IsConsumable)
+            Debug.Log($"[Equipment] Used consumable: '{_rightHand.definition.displayName}' (right).");
     }
 
     // ── Aim toggle ────────────────────────────────────────────────────────────
@@ -270,11 +312,11 @@ public class PlayerEquipment : MonoBehaviour
     private void Fire(HandSlot hand)
     {
         var weapon = hand == HandSlot.Left ? _leftHand : _rightHand;
-        if (weapon == null || !weapon.IsRanged) return;
+        if (weapon == null || !weapon.definition.IsRanged) return;
 
-        if (weapon.bulletPrefab == null)
+        if (weapon.definition.bulletPrefab == null)
         {
-            Debug.LogWarning($"[Equipment] '{weapon.displayName}' has no bulletPrefab assigned.");
+            Debug.LogWarning($"[Equipment] '{weapon.definition.displayName}' has no bulletPrefab assigned.");
             return;
         }
 
@@ -299,13 +341,13 @@ public class PlayerEquipment : MonoBehaviour
             spawnDir = ray.direction;
         }
 
-        var bulletGO = Instantiate(weapon.bulletPrefab, spawnPos,
+        var bulletGO = Instantiate(weapon.definition.bulletPrefab, spawnPos,
                                    Quaternion.LookRotation(spawnDir));
 
         var bullet = bulletGO.GetComponent<Bullet>();
         if (bullet == null)
         {
-            Debug.LogWarning($"[Equipment] bulletPrefab '{weapon.bulletPrefab.name}' " +
+            Debug.LogWarning($"[Equipment] bulletPrefab '{weapon.definition.bulletPrefab.name}' " +
                              $"needs a Bullet component.");
             Destroy(bulletGO);
             return;
@@ -321,14 +363,17 @@ public class PlayerEquipment : MonoBehaviour
             if (pc != null) inheritedVel = pc.GetState().Velocity;
         }
 
-        bullet.speed = weapon.bulletSpeed;
-        bullet.drop = weapon.bulletDrop;
-        bullet.lifetime = weapon.bulletLifetime;
+        bullet.speed = weapon.definition.bulletSpeed;
+        bullet.drop = weapon.definition.bulletDrop;
+        bullet.lifetime = weapon.definition.bulletLifetime;
         bullet.Launch(spawnDir, inheritedVel);
 
-        Debug.Log($"[Equipment] Fired '{weapon.displayName}' — " +
-                  $"speed: {weapon.bulletSpeed}, drop: {weapon.bulletDrop}, " +
-                  $"lifetime: {(weapon.bulletLifetime <= 0f ? "∞" : weapon.bulletLifetime + "s")}");
+        weapon.Degrade();
+
+        Debug.Log($"[Equipment] Fired '{weapon.definition.displayName}' — " +
+                  $"speed: {weapon.definition.bulletSpeed}, drop: {weapon.definition.bulletDrop}, " +
+                  $"lifetime: {(weapon.definition.bulletLifetime <= 0f ? "∞" : weapon.definition.bulletLifetime + "s")}, " +
+                  $"durability: {weapon.currentDurability:F1}/{weapon.definition.maxDurability:F1}");
     }
 
     // ── Muzzle refresh ────────────────────────────────────────────────────────
@@ -350,10 +395,10 @@ public class PlayerEquipment : MonoBehaviour
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private ItemDefinition GetAimingWeapon()
+    private ItemInstance GetAimingWeapon()
     {
-        if (_rightHand != null && _rightHand.IsRanged) return _rightHand;
-        if (_leftHand != null && _leftHand.IsRanged) return _leftHand;
+        if (_rightHand != null && _rightHand.definition.IsRanged) return _rightHand;
+        if (_leftHand != null && _leftHand.definition.IsRanged) return _leftHand;
         return null;
     }
 
@@ -364,20 +409,20 @@ public class PlayerEquipment : MonoBehaviour
         if (hand == HandSlot.Left) _leftHand = null;
         else _rightHand = null;
         if (!inventory.TryAdd(item))
-            Debug.LogWarning($"[Equipment] Inventory full — could not return '{item.displayName}'.");
+            Debug.LogWarning($"[Equipment] Inventory full — could not return '{item.definition.displayName}'.");
     }
 
-    private void ClearHandItem(ItemDefinition item)
+    private void ClearHandItem(ItemInstance item)
     {
         if (_leftHand == item) { _leftHand = null; _leftMuzzle = null; }
         if (_rightHand == item) { _rightHand = null; _rightMuzzle = null; }
     }
 
-    private void DropItem(ItemDefinition item)
+    private void DropItem(ItemInstance item)
     {
-        if (item.worldPrefab == null)
+        if (item.definition.worldPrefab == null)
         {
-            Debug.LogWarning($"[Equipment] '{item.displayName}' has no world prefab and could not be dropped.");
+            Debug.LogWarning($"[Equipment] '{item.definition.displayName}' has no world prefab and could not be dropped.");
             return;
         }
 
@@ -386,8 +431,7 @@ public class PlayerEquipment : MonoBehaviour
         if (Physics.Raycast(origin + Vector3.up, Vector3.down, out RaycastHit hit, 4f))
             dropPosition = hit.point + Vector3.up * 0.1f;
 
-        GameObject dropped = Instantiate(item.worldPrefab, dropPosition, Quaternion.identity);
-        PickupItem pickup = dropped.GetComponent<PickupItem>();
+        GameObject dropped = Instantiate(item.definition.worldPrefab, dropPosition, Quaternion.identity); PickupItem pickup = dropped.GetComponent<PickupItem>();
         if (pickup == null) pickup = dropped.AddComponent<PickupItem>();
         pickup.item = item;
 

@@ -252,16 +252,16 @@ public class HealthManager : MonoBehaviour
         if (playerEquipment == null) return;
 
         var equipped = playerEquipment.GetArmourSlot(part);
-        if (equipped == null || !equipped.IsArmour) return;
+        if (equipped == null || !equipped.definition.IsArmour) return;
 
         // Find the hit record for the armour layer (it's always the first layer hit if present)
         foreach (var hit in result.layerHits)
         {
-            if (hit.displayName == equipped.layerStats.displayName)
+            if (hit.displayName == equipped.definition.layerStats.displayName)
             {
                 if (hit.destroyed)
                 {
-                    log.AppendLine($"\n[ARMOUR] '{equipped.displayName}' destroyed — auto-unequipping.");
+                    log.AppendLine($"\n[ARMOUR] '{equipped.definition.displayName}' destroyed — auto-unequipping.");
                     StartCoroutine(DeferredUnequipArmour(part));
                 }
                 break;

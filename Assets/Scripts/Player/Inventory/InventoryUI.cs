@@ -48,6 +48,11 @@ public class InventoryUI : MonoBehaviour
     private ArmourSlotWidget[] _armourSlots = new ArmourSlotWidget[11];
     private HandSlotWidget _leftHandWidget;
     private HandSlotWidget _rightHandWidget;
+    private BagSlotWidget _bagWidget;
+    private TextMeshProUGUI _capacityLabel;
+    private int _builtSlotCount;
+    private float _gridOriginX;
+    private float _gridOriginY;
 
     // Context menu
     private GameObject _contextMenu;
@@ -87,6 +92,14 @@ public class InventoryUI : MonoBehaviour
     private class HandSlotWidget
     {
         public HandSlot hand;
+        public GameObject root;
+        public Image background;
+        public Image itemColor;
+        public TextMeshProUGUI label;
+    }
+
+    private class BagSlotWidget
+    {
         public GameObject root;
         public Image background;
         public Image itemColor;
@@ -236,6 +249,9 @@ public class InventoryUI : MonoBehaviour
         float handY = top - 310f;
         BuildHandSlot(HandSlot.Left, cx - 42f, handY, "L.Hand");
         BuildHandSlot(HandSlot.Right, cx + 42f, handY, "R.Hand");
+
+        // Bag slot — below hands
+        BuildBagSlot(cx, handY - 60f, "Bag");
     }
 
     private void BuildArmourSlot(BodyPart part, float x, float y, string shortLabel)
@@ -284,14 +300,14 @@ public class InventoryUI : MonoBehaviour
             capturedBg.color = slotHoverColor);
         AddTrigger(trigger, EventTriggerType.PointerExit, _ =>
             capturedBg.color = equipment?.GetArmourSlot(capturedPart) != null
-                ? DarkenColor(equipment.GetArmourSlot(capturedPart).slotColor)
+                ? DarkenColor(equipment.GetArmourSlot(capturedPart).definition.slotColor)
                 : slotEmptyColor);
         AddTrigger(trigger, EventTriggerType.Drop, _ =>
         {
             if (_dragSourceIndex < 0) return;
             var item = inventory.GetSlot(_dragSourceIndex);
-            if (item == null || !item.IsArmour) return;
-            if (item.targetBodyPart != capturedPart) return;
+            if (item == null || !item.definition.IsArmour) return;
+            if (item.definition.targetBodyPart != capturedPart) return;
             inventory.RemoveAt(_dragSourceIndex);
             equipment.TryEquipArmour(item);
             _dragSourceIndex = -1;
@@ -363,7 +379,7 @@ public class InventoryUI : MonoBehaviour
             capturedBg.color = slotHoverColor);
         AddTrigger(trigger, EventTriggerType.PointerExit, _ =>
             capturedBg.color = equipment?.GetHandSlot(capturedHand) != null
-                ? DarkenColor(equipment.GetHandSlot(capturedHand).slotColor)
+                ? DarkenColor(equipment.GetHandSlot(capturedHand).definition.slotColor)
                 : slotEmptyColor);
 
         // Right-click to unequip
@@ -379,7 +395,7 @@ public class InventoryUI : MonoBehaviour
         {
             if (_dragSourceIndex < 0) return;
             var item = inventory.GetSlot(_dragSourceIndex);
-            if (item == null || (!item.IsWeapon && !item.IsConsumable)) return;
+            if (item == null || (!item.definition.IsWeapon && !item.definition.IsConsumable)) return;
             inventory.RemoveAt(_dragSourceIndex);
             equipment.TryEquipHand(item, capturedHand);
             _dragSourceIndex = -1;
@@ -398,6 +414,72 @@ public class InventoryUI : MonoBehaviour
         else _rightHandWidget = widget;
     }
 
+    private void BuildBagSlot(float x, float y, string label)
+    {
+        var go = MakeRect("Bag", _leftPanel.transform);
+        var rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0.5f, 0.5f);
+        rt.anchorMax = new Vector2(0.5f, 0.5f);
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.anchoredPosition = new Vector2(x, y);
+        rt.sizeDelta = new Vector2(handSlotSize, handSlotSize);
+
+        var border = MakeRect("Border", go.transform);
+        var borderRT = border.GetComponent<RectTransform>();
+        borderRT.anchorMin = Vector2.zero; borderRT.anchorMax = Vector2.one;
+        borderRT.offsetMin = new Vector2(-2, -2); borderRT.offsetMax = new Vector2(2, 2);
+        border.AddComponent<Image>().color = new Color(0.3f, 0.2f, 0.4f, 1f);
+
+        var bg = go.AddComponent<Image>();
+        bg.color = slotEmptyColor;
+
+        var colorGO = MakeRect("ItemColor", go.transform);
+        var colorRT = colorGO.GetComponent<RectTransform>();
+        colorRT.anchorMin = new Vector2(0.1f, 0.1f); colorRT.anchorMax = new Vector2(0.9f, 0.9f);
+        colorRT.offsetMin = Vector2.zero; colorRT.offsetMax = Vector2.zero;
+        var colorImg = colorGO.AddComponent<Image>();
+        colorImg.color = Color.clear;
+
+        var labelGO = MakeRect("Label", go.transform);
+        var labelRT = labelGO.GetComponent<RectTransform>();
+        labelRT.anchorMin = Vector2.zero; labelRT.anchorMax = new Vector2(1, 0);
+        labelRT.pivot = new Vector2(0.5f, 1f);
+        labelRT.offsetMin = new Vector2(0, -14f); labelRT.offsetMax = new Vector2(0, 0);
+        var labelTMP = labelGO.AddComponent<TextMeshProUGUI>();
+        labelTMP.text = label; labelTMP.fontSize = 9;
+        labelTMP.alignment = TextAlignmentOptions.Center;
+        labelTMP.color = new Color(0.7f, 0.5f, 0.9f);
+
+        var trigger = go.AddComponent<EventTrigger>();
+        Image capturedBg = bg;
+
+        AddTrigger(trigger, EventTriggerType.PointerEnter, _ =>
+            capturedBg.color = slotHoverColor);
+        AddTrigger(trigger, EventTriggerType.PointerExit, _ =>
+            capturedBg.color = equipment?.GetBagSlot() != null
+                ? DarkenColor(equipment.GetBagSlot().definition.slotColor)
+                : slotEmptyColor);
+
+        AddTrigger(trigger, EventTriggerType.PointerClick, data =>
+        {
+            var pd = (PointerEventData)data;
+            if (pd.button == PointerEventData.InputButton.Right)
+                equipment?.UnequipBag();
+        });
+
+        AddTrigger(trigger, EventTriggerType.Drop, _ =>
+        {
+            if (_dragSourceIndex < 0) return;
+            var item = inventory.GetSlot(_dragSourceIndex);
+            if (item == null || !item.definition.IsBag) return;
+            inventory.RemoveAt(_dragSourceIndex);
+            equipment.TryEquipBag(item);
+            _dragSourceIndex = -1;
+        });
+
+        _bagWidget = new BagSlotWidget { root = go, background = bg, itemColor = colorImg, label = labelTMP };
+    }
+
     // ── Inventory grid ────────────────────────────────────────────────────────
 
     private void BuildInventoryGrid(float panelW, float gridW, float gridH)
@@ -414,17 +496,37 @@ public class InventoryUI : MonoBehaviour
         titleTMP.alignment = TextAlignmentOptions.Center;
         titleTMP.color = Color.white;
 
-        float gridOriginX = -gridW * 0.5f;
-        float gridOriginY = gridH * 0.5f - 40f;
+        // Capacity label (e.g. "4 / 10")
+        var capGO = MakeRect("Capacity", _rightPanel.transform);
+        var capRT = capGO.GetComponent<RectTransform>();
+        capRT.anchorMin = new Vector2(0, 1); capRT.anchorMax = new Vector2(1, 1);
+        capRT.pivot = new Vector2(0.5f, 1f);
+        capRT.offsetMin = new Vector2(0, -50f); capRT.offsetMax = new Vector2(0, -32f);
+        _capacityLabel = capGO.AddComponent<TextMeshProUGUI>();
+        _capacityLabel.fontSize = 11;
+        _capacityLabel.alignment = TextAlignmentOptions.Center;
+        _capacityLabel.color = new Color(0.7f, 0.7f, 0.7f);
+
+        _gridOriginX = -gridW * 0.5f;
+        _gridOriginY = gridH * 0.5f - 56f;
+
+        RebuildGridSlots();
+    }
+
+    private void RebuildGridSlots()
+    {
+        foreach (var w in _gridSlots) Destroy(w.root);
+        _gridSlots.Clear();
 
         for (int i = 0; i < inventory.SlotCount; i++)
         {
             int col = i % columns;
             int row = i / columns;
-            float x = gridOriginX + col * (slotSize + slotGap) + slotSize * 0.5f;
-            float y = gridOriginY - row * (slotSize + slotGap) - slotSize * 0.5f;
+            float x = _gridOriginX + col * (slotSize + slotGap) + slotSize * 0.5f;
+            float y = _gridOriginY - row * (slotSize + slotGap) - slotSize * 0.5f;
             _gridSlots.Add(BuildGridSlot(i, x, y));
         }
+        _builtSlotCount = inventory.SlotCount;
     }
 
     private SlotWidget BuildGridSlot(int index, float x, float y)
@@ -483,7 +585,9 @@ public class InventoryUI : MonoBehaviour
             var item = inventory.GetSlot(captured);
             if (item != null)
             {
-                widget.tooltip.text = item.displayName;
+                widget.tooltip.text = item.definition.isStackable && item.stackCount > 1
+                    ? $"{item.definition.displayName} x{item.stackCount}"
+                    : item.definition.displayName;
                 widget.tooltip.transform.parent.gameObject.SetActive(true);
             }
             widget.background.color = slotHoverColor;
@@ -493,7 +597,7 @@ public class InventoryUI : MonoBehaviour
         {
             widget.tooltip.transform.parent.gameObject.SetActive(false);
             widget.background.color = inventory.GetSlot(captured) != null
-                ? DarkenColor(inventory.GetSlot(captured).slotColor)
+                ? DarkenColor(inventory.GetSlot(captured).definition.slotColor)
                 : slotEmptyColor;
         });
 
@@ -579,9 +683,9 @@ public class InventoryUI : MonoBehaviour
             Destroy(child.gameObject);
 
         // ── Equip options ─────────────────────────────────────────────────────
-        if (item.IsArmour)
+        if (item.definition.IsArmour)
         {
-            var partName = item.targetBodyPart.ToString();
+            var partName = item.definition.targetBodyPart.ToString();
             AddContextButton($"Equip to {partName}", () =>
             {
                 var i = inventory.RemoveAt(_contextSlotIndex);
@@ -589,9 +693,9 @@ public class InventoryUI : MonoBehaviour
                 HideContextMenu();
             });
         }
-        else if (item.IsWeapon || item.IsConsumable)
+        else if (item.definition.IsWeapon || item.definition.IsConsumable)
         {
-            if (item.IsTwoHanded)
+            if (item.definition.IsTwoHanded)
             {
                 AddContextButton("Equip (Two-Handed)", () =>
                 {
@@ -615,6 +719,15 @@ public class InventoryUI : MonoBehaviour
                     HideContextMenu();
                 });
             }
+        }
+        else if (item.definition.IsBag)
+        {
+            AddContextButton("Equip Bag", () =>
+            {
+                var i = inventory.RemoveAt(_contextSlotIndex);
+                if (i != null) equipment.TryEquipBag(i);
+                HideContextMenu();
+            });
         }
 
         // Drop option always available
@@ -669,14 +782,15 @@ public class InventoryUI : MonoBehaviour
 
     // ── Drag ghost ────────────────────────────────────────────────────────────
 
-    private void CreateDragGhost(ItemDefinition item, Vector2 screenPos)
+    private void CreateDragGhost(ItemInstance item, Vector2 screenPos)
     {
         _dragGhost = MakeRect("DragGhost", _root.transform);
         var rt = _dragGhost.GetComponent<RectTransform>();
         rt.sizeDelta = new Vector2(slotSize, slotSize);
 
         var img = _dragGhost.AddComponent<Image>();
-        img.color = new Color(item.slotColor.r, item.slotColor.g, item.slotColor.b, 0.7f);
+        var c = item.definition.slotColor;
+        img.color = new Color(c.r, c.g, c.b, 0.7f);
         img.raycastTarget = false;
 
         MoveGhost(screenPos);
@@ -704,13 +818,13 @@ public class InventoryUI : MonoBehaviour
         var spawnPos = cam.position + cam.forward * dropDistance;
 
         GameObject worldObj;
-        if (item.worldPrefab != null)
+        if (item.definition.worldPrefab != null)
         {
-            worldObj = Instantiate(item.worldPrefab, spawnPos, Quaternion.identity);
+            worldObj = Instantiate(item.definition.worldPrefab, spawnPos, Quaternion.identity);
         }
         else
         {
-            Debug.LogWarning($"[Inventory] '{item.displayName}' has no worldPrefab — spawning capsule.");
+            Debug.LogWarning($"[Inventory] '{item.definition.displayName}' has no worldPrefab — spawning capsule.");
             worldObj = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             worldObj.transform.position = spawnPos;
             worldObj.transform.localScale = Vector3.one * 0.3f;
@@ -718,7 +832,7 @@ public class InventoryUI : MonoBehaviour
             if (mr != null)
             {
                 mr.material = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-                mr.material.color = item.slotColor;
+                mr.material.color = item.definition.slotColor;
             }
         }
 
@@ -726,19 +840,25 @@ public class InventoryUI : MonoBehaviour
         if (pickup == null) pickup = worldObj.AddComponent<PickupItem>();
         pickup.item = item;
 
-        Debug.Log($"[Inventory] Dropped '{item.displayName}' at {spawnPos}.");
+        Debug.Log($"[Inventory] Dropped '{item.definition.displayName}' at {spawnPos}.");
     }
 
     // ── Refresh ───────────────────────────────────────────────────────────────
 
     private void RefreshGrid()
     {
+        if (inventory.SlotCount != _builtSlotCount)
+            RebuildGridSlots();
+
         for (int i = 0; i < _gridSlots.Count; i++)
         {
             var widget = _gridSlots[i];
             var item = inventory.GetSlot(i);
             ApplyItemVisual(widget.background, widget.itemColor, item);
         }
+
+        if (_capacityLabel != null)
+            _capacityLabel.text = $"{inventory.UsedSlots} / {inventory.SlotCount}";
     }
 
     private void RefreshEquipment()
@@ -752,6 +872,9 @@ public class InventoryUI : MonoBehaviour
 
         RefreshHandWidget(_leftHandWidget, HandSlot.Left);
         RefreshHandWidget(_rightHandWidget, HandSlot.Right);
+
+        if (_bagWidget != null)
+            ApplyItemVisual(_bagWidget.background, _bagWidget.itemColor, equipment.GetBagSlot());
     }
 
     private void RefreshHandWidget(HandSlotWidget widget, HandSlot hand)
@@ -764,7 +887,7 @@ public class InventoryUI : MonoBehaviour
     /// <summary>
     /// Applies icon sprite if available, falls back to slot color tint.
     /// </summary>
-    private void ApplyItemVisual(Image background, Image itemColor, ItemDefinition item)
+    private void ApplyItemVisual(Image background, Image itemColor, ItemInstance item)
     {
         if (item == null)
         {
@@ -774,11 +897,12 @@ public class InventoryUI : MonoBehaviour
             return;
         }
 
-        if (item.icon != null)
+        var def = item.definition;
+        if (def.icon != null)
         {
             // Icon mode — neutral background, full-color icon sprite
-            background.color = DarkenColor(item.slotColor);
-            itemColor.sprite = item.icon;
+            background.color = DarkenColor(def.slotColor);
+            itemColor.sprite = def.icon;
             itemColor.color = Color.white; // don't tint the sprite
             itemColor.type = Image.Type.Simple;
             itemColor.preserveAspect = true;
@@ -786,9 +910,9 @@ public class InventoryUI : MonoBehaviour
         else
         {
             // Color fallback — no icon assigned
-            background.color = DarkenColor(item.slotColor);
+            background.color = DarkenColor(def.slotColor);
             itemColor.sprite = null;
-            itemColor.color = item.slotColor;
+            itemColor.color = def.slotColor;
         }
     }
 

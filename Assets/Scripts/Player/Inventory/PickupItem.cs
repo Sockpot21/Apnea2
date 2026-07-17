@@ -8,7 +8,7 @@ using TMPro;
 public class PickupItem : MonoBehaviour
 {
     [Header("Item Data")]
-    public ItemDefinition item;
+    public ItemInstance item;
 
     [Header("Prompt Style")]
     [SerializeField] private float promptVerticalOffset = 1.2f;
@@ -20,9 +20,23 @@ public class PickupItem : MonoBehaviour
     private GameObject _promptRoot;
     private TextMeshPro _promptLabel;
     private bool _promptVisible = false;
-
     // ── Lifecycle ─────────────────────────────────────────────────────────────
+    private void Awake()
+    {
+        // World-placed pickups only assign `definition` in the Inspector — fill in
+        // runtime instance data (durability, stack count) the first time it's touched.
+        if (item == null || item.definition == null)
+        {
+            Debug.LogWarning($"[PickupItem] '{gameObject.name}' has no Item Definition assigned — assign one in the Inspector.", this);
+            return;
+        }
 
+        if (item.currentDurability <= 0f && item.stackCount <= 0)
+        {
+            item.currentDurability = item.definition.maxDurability;
+            item.stackCount = 1;
+        }
+    }
     private void Start() => BuildPrompt();
 
     private void OnDestroy()
@@ -65,7 +79,7 @@ public class PickupItem : MonoBehaviour
 
     // ── Collect ───────────────────────────────────────────────────────────────
 
-    public ItemDefinition Collect()
+    public ItemInstance Collect()
     {
         var collected = item;
         Destroy(gameObject);
@@ -101,6 +115,6 @@ public class PickupItem : MonoBehaviour
     private void UpdatePromptText()
     {
         if (_promptLabel == null) return;
-        _promptLabel.text = $"[E]  Pick up  {(item != null ? item.displayName : "Item")}";
+        _promptLabel.text = $"[E]  Pick up  {(item != null ? item.definition.displayName : "Item")}";
     }
 }

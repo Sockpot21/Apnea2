@@ -9,11 +9,12 @@ using UnityEngine;
 public class PlayerInventory : MonoBehaviour
 {
     [Header("Settings")]
-    [Tooltip("Total number of inventory slots.")]
-    [SerializeField] private int slotCount = 20;
+    [Tooltip("Base number of inventory slots, before any bag bonus.")]
+    [SerializeField] private int baseSlotCount = 10;
 
-    // Runtime slot data — null means empty
-    private ItemDefinition[] _slots;
+    // Runtime slot data — null means empty. Array length = baseSlotCount + bonus slots from an equipped bag.
+    private ItemInstance[] _slots;
+    private int _bonusSlots;
 
     // ── Events ────────────────────────────────────────────────────────────────
 
@@ -23,25 +24,50 @@ public class PlayerInventory : MonoBehaviour
 
     private void Awake()
     {
-        _slots = new ItemDefinition[slotCount];
+        _slots = new ItemInstance[baseSlotCount];
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
 
     public int SlotCount => _slots.Length;
 
-    public ItemDefinition GetSlot(int index) => _slots[index];
-
-    /// <summary>Adds item to first empty slot. Returns true on success.</summary>
-    public bool TryAdd(ItemDefinition item)
+    public int UsedSlots
     {
+        get
+        {
+            int used = 0;
+            foreach (var s in _slots) if (s != null) used++;
+            return used;
+        }
+    }
+
+    public ItemInstance GetSlot(int index) => _slots[index];
+
+    /// <summary>Adds item to a matching stack if possible, else the first empty slot. Returns true on success.</summary>
+    public bool TryAdd(ItemInstance item)
+    {
+        if (item.definition.isStackable)
+        {
+            for (int i = 0; i < _slots.Length; i++)
+            {
+                if (_slots[i] != null && _slots[i].definition == item.definition
+                    && _slots[i].stackCount < item.definition.maxStackSize)
+                {
+                    _slots[i].stackCount++;
+                    OnInventoryChanged?.Invoke();
+                    Debug.Log($"[Inventory] Stacked '{item.definition.displayName}' in slot {i} ({_slots[i].stackCount}/{item.definition.maxStackSize}).");
+                    return true;
+                }
+            }
+        }
+
         for (int i = 0; i < _slots.Length; i++)
         {
             if (_slots[i] == null)
             {
                 _slots[i] = item;
                 OnInventoryChanged?.Invoke();
-                Debug.Log($"[Inventory] Added '{item.displayName}' to slot {i}.");
+                Debug.Log($"[Inventory] Added '{item.definition.displayName}' to slot {i}.");
                 return true;
             }
         }
@@ -50,7 +76,7 @@ public class PlayerInventory : MonoBehaviour
     }
 
     /// <summary>Removes item at index and returns it. Returns null if slot empty.</summary>
-    public ItemDefinition RemoveAt(int index)
+    public ItemInstance RemoveAt(int index)
     {
         if (index < 0 || index >= _slots.Length) return null;
         var item = _slots[index];
@@ -58,7 +84,7 @@ public class PlayerInventory : MonoBehaviour
 
         _slots[index] = null;
         OnInventoryChanged?.Invoke();
-        Debug.Log($"[Inventory] Removed '{item.displayName}' from slot {index}.");
+        Debug.Log($"[Inventory] Removed '{item.definition.displayName}' from slot {index}.");
         return item;
     }
 
@@ -68,5 +94,33 @@ public class PlayerInventory : MonoBehaviour
         foreach (var s in _slots)
             if (s == null) return true;
         return false;
+    }
+
+    // ── Bag capacity ──────────────────────────────────────────────────────────
+
+    /// <summary>Grows the slot array by amount, preserving existing items. Call when a bag is equipped.</summary>
+    public void AddBonusSlots(int amount)
+    {
+        if (amount <= 0) return;
+        System.Array.Resize(ref _slots, _slots.Length + amount);
+        _bonusSlots += amount;
+        OnInventoryChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Shrinks the slot array by amount, removing trailing slots. Call when a bag is unequipped.
+    /// Fails (returns false) if any of those trailing slots are occupied.
+    /// </summary>
+    public bool RemoveBonusSlots(int amount)
+    {
+        if (amount <= 0) return true;
+        int newLength = _slots.Length - amount;
+        for (int i = newLength; i < _slots.Length; i++)
+            if (_slots[i] != null) return false;
+
+        System.Array.Resize(ref _slots, newLength);
+        _bonusSlots -= amount;
+        OnInventoryChanged?.Invoke();
+        return true;
     }
 }

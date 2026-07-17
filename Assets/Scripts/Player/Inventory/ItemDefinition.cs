@@ -13,7 +13,8 @@ public enum ItemType
     Armour,
     Consumable,
     Quest,
-    Augment
+    Augment,
+    Bag
 }
 
 public enum WeaponType
@@ -38,7 +39,6 @@ public class ItemDefinition : ScriptableObject
     [TextArea]
     public string description;
     public ItemType itemType;
-    public float weight = 1f;
     public Color slotColor = new Color(0.3f, 0.6f, 1f, 1f);
 
     [Tooltip("Icon shown in inventory and equipment slots. " +
@@ -49,6 +49,16 @@ public class ItemDefinition : ScriptableObject
              "Attach a PickupItem component to it.")]
     public GameObject worldPrefab;
 
+    [Header("Durability")]
+    [Tooltip("Maximum durability as a percentage (0-100).")]
+    public float maxDurability = 100f;
+    [Tooltip("Durability % lost per use (e.g. per shot fired). 0 = never degrades.")]
+    public float degradationRate = 0f;
+
+    [Header("Stacking")]
+    public bool isStackable = false;
+    [Tooltip("Max items per stack when isStackable is true.")]
+    public int maxStackSize = 1;
     // ── Weapon fields (shown when itemType == Weapon) ─────────────────────────
 
     public WeaponType weaponType;
@@ -83,13 +93,14 @@ public class ItemDefinition : ScriptableObject
     [Tooltip("ID of the AugmentEntry in the assigned AugmentCatalogue. " +
              "Use this ItemDefinition on a PickupItem world GameObject.")]
     public string augmentID;
-
+    // ── Bag fields (shown when itemType == Bag) ───────────────────────────────
+    [Tooltip("Extra inventory slots granted while this bag is equipped.")]
+    public int bagSlotCapacity = 10;
     // ── Convenience helpers ───────────────────────────────────────────────────
-
     public bool IsArmour => itemType == ItemType.Armour;
     public bool IsWeapon => itemType == ItemType.Weapon;
     public bool IsConsumable => itemType == ItemType.Consumable;
     public bool IsAugment => itemType == ItemType.Augment;
-    public bool IsRanged => itemType == ItemType.Weapon && weaponType == WeaponType.Ranged;
+    public bool IsBag => itemType == ItemType.Bag; public bool IsRanged => itemType == ItemType.Weapon && weaponType == WeaponType.Ranged;
     public bool IsTwoHanded => itemType == ItemType.Weapon && handedness == Handedness.TwoHanded;
 }

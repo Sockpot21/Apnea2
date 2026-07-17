@@ -25,8 +25,15 @@ public class ItemDefinitionEditor : Editor
         EditorGUILayout.PropertyField(serializedObject.FindProperty("itemType"));
 
         EditorGUILayout.Space(4);
-        EditorGUILayout.LabelField("Physical", EditorStyles.boldLabel);
-        EditorGUILayout.PropertyField(serializedObject.FindProperty("weight"));
+        EditorGUILayout.LabelField("Durability", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("maxDurability"));
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("degradationRate"));
+
+        EditorGUILayout.Space(4);
+        EditorGUILayout.LabelField("Stacking", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("isStackable"));
+        if (item.isStackable)
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("maxStackSize"));
 
         EditorGUILayout.Space(4);
         EditorGUILayout.LabelField("Visual", EditorStyles.boldLabel);
@@ -46,6 +53,7 @@ public class ItemDefinitionEditor : Editor
             case ItemType.Armour: DrawArmourFields(); break;
             case ItemType.Consumable: DrawConsumableFields(); break;
             case ItemType.Augment: DrawAugmentFields(); break;
+            case ItemType.Bag: DrawBagFields(); break;
             case ItemType.Misc:
             case ItemType.Quest:
                 EditorGUILayout.HelpBox(
@@ -108,8 +116,17 @@ public class ItemDefinitionEditor : Editor
         EditorGUILayout.LabelField("Augment Data", EditorStyles.boldLabel);
         EditorGUILayout.PropertyField(serializedObject.FindProperty("augmentID"));
         EditorGUILayout.HelpBox(
-            "The Modification Station resolves this ID against its Augment Catalogue. " +
-            "Augment items remain in the player inventory for now.",
+                    "The Modification Station resolves this ID against its Augment Catalogue. " +
+                    "Augment items remain in the player inventory for now.",
+                    MessageType.Info);
+    }
+
+    private void DrawBagFields()
+    {
+        EditorGUILayout.LabelField("Bag Data", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("bagSlotCapacity"));
+        EditorGUILayout.HelpBox(
+            "Adds bagSlotCapacity extra inventory slots while equipped.",
             MessageType.Info);
     }
 }
