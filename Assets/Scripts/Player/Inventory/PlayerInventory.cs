@@ -88,6 +88,18 @@ public class PlayerInventory : MonoBehaviour
         return item;
     }
 
+    /// <summary>Moves the item at fromIndex into toIndex, swapping with whatever is already there (if anything).</summary>
+    public bool MoveItem(int fromIndex, int toIndex)
+    {
+        if (fromIndex < 0 || fromIndex >= _slots.Length) return false;
+        if (toIndex < 0 || toIndex >= _slots.Length) return false;
+        if (fromIndex == toIndex) return false;
+
+        (_slots[toIndex], _slots[fromIndex]) = (_slots[fromIndex], _slots[toIndex]);
+        OnInventoryChanged?.Invoke();
+        return true;
+    }
+
     /// <summary>Returns true if at least one slot is free.</summary>
     public bool HasSpace()
     {

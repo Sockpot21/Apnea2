@@ -374,9 +374,18 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         // ── Wall run: continuous wall detection via raycast ───────────────────
         if (_state.Stance is Stance.WallRun)
         {
-            // Raycast toward the wall every frame — exit if wall is gone
-            bool wallStillPresent = Physics.Raycast(
-                transform.position, -_wallNormal, wallDetectRadius + 0.1f);
+            // Raycast toward the wall every frame — exit if wall is gone, angle is
+            // no longer valid, or the surface hit is no longer the same wall
+            // (catches corners, where a stale raycast can clip an adjacent surface).
+            bool wallStillPresent = false;
+            if (Physics.Raycast(transform.position, -_wallNormal, out RaycastHit wallCheckHit,
+                wallDetectRadius + 0.1f))
+            {
+                float checkAngle = Vector3.Angle(wallCheckHit.normal, Vector3.up);
+                bool validAngle = Mathf.Abs(checkAngle - 90f) <= wallNormalTolerance;
+                bool sameWall = Vector3.Dot(wallCheckHit.normal, _wallNormal) > 0.9f; 
+                wallStillPresent = validAngle && sameWall;
+            }
 
             // Also exit if player is not holding W (forward input)
             float forwardInput = Vector3.Dot(_requestedMovement.normalized,
@@ -407,6 +416,27 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         {
             candidateWallNormal = wallHit.normal;
             hasWallContact = true;
+        }
+
+        // Confirm the candidate is a real, flat wall surface rather than a
+        // one-off corner/edge collision normal (which can point almost anywhere).
+        // Re-probe straight toward where the wall should be and require a
+        // closely matching surface. This is what prevents corner clips from
+        // launching a full wall run into open air.
+        if (hasWallContact)
+        {
+            if (Physics.Raycast(transform.position, -candidateWallNormal, out RaycastHit confirmHit,
+                wallDetectRadius + 0.2f))
+            {
+                float confirmAngle = Vector3.Angle(confirmHit.normal, Vector3.up);
+                bool confirmValidAngle = Mathf.Abs(confirmAngle - 90f) <= wallNormalTolerance;
+                bool confirmSameWall = Vector3.Dot(confirmHit.normal, candidateWallNormal) > 0.9f;
+                if (!confirmValidAngle || !confirmSameWall) hasWallContact = false;
+            }
+            else
+            {
+                hasWallContact = false; // nothing there — spurious contact
+            }
         }
 
         if (wallRunEnabled && hasWallContact && !_state.Grounded
@@ -906,6 +936,9 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
             motor.ForceUnground(0f);
             _ungroundedDueToJump = true;
             _doubleJumpAvailable = doubleJumpEnabled;
+
+            if (_state.Stance is Stance.Crouch or Stance.Slide)
+                TryStand();
 
             float cv = Vector3.Dot(currentVelocity, motor.CharacterUp);
             float tv = Mathf.Max(cv, jumpSpeed);

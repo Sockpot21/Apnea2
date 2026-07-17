@@ -53,6 +53,7 @@ public class InventoryUI : MonoBehaviour
     private int _builtSlotCount;
     private float _gridOriginX;
     private float _gridOriginY;
+    private bool _dropHandled;
 
     // Context menu
     private GameObject _contextMenu;
@@ -250,8 +251,11 @@ public class InventoryUI : MonoBehaviour
         BuildHandSlot(HandSlot.Left, cx - 42f, handY, "L.Hand");
         BuildHandSlot(HandSlot.Right, cx + 42f, handY, "R.Hand");
 
-        // Bag slot — below hands
-        BuildBagSlot(cx, handY - 60f, "Bag");
+        // Bag slot — bottom-right corner of the panel, clear of the hand slots
+        float bagPadding = 16f;
+        float bagX = panelW * 0.5f - handSlotSize * 0.5f - bagPadding;
+        float bagY = -panelH * 0.5f + handSlotSize * 0.5f + bagPadding;
+        BuildBagSlot(bagX, bagY, "Bag");
     }
 
     private void BuildArmourSlot(BodyPart part, float x, float y, string shortLabel)
@@ -310,9 +314,9 @@ public class InventoryUI : MonoBehaviour
             if (item.definition.targetBodyPart != capturedPart) return;
             inventory.RemoveAt(_dragSourceIndex);
             equipment.TryEquipArmour(item);
+            _dropHandled = true;
             _dragSourceIndex = -1;
         });
-
         // Right-click to unequip
         AddTrigger(trigger, EventTriggerType.PointerClick, data =>
         {
@@ -398,6 +402,7 @@ public class InventoryUI : MonoBehaviour
             if (item == null || (!item.definition.IsWeapon && !item.definition.IsConsumable)) return;
             inventory.RemoveAt(_dragSourceIndex);
             equipment.TryEquipHand(item, capturedHand);
+            _dropHandled = true;
             _dragSourceIndex = -1;
         });
 
@@ -474,6 +479,7 @@ public class InventoryUI : MonoBehaviour
             if (item == null || !item.definition.IsBag) return;
             inventory.RemoveAt(_dragSourceIndex);
             equipment.TryEquipBag(item);
+            _dropHandled = true;
             _dragSourceIndex = -1;
         });
 
@@ -614,8 +620,18 @@ public class InventoryUI : MonoBehaviour
         {
             if (inventory.GetSlot(captured) == null) return;
             _dragSourceIndex = captured;
+            _dropHandled = false;
             HideContextMenu();
             CreateDragGhost(inventory.GetSlot(captured), ((PointerEventData)data).position);
+        });
+
+        // Drop onto another inventory slot — moves/swaps regardless of how many slots are open
+        AddTrigger(trigger, EventTriggerType.Drop, _ =>
+        {
+            if (_dragSourceIndex < 0) return;
+            if (captured != _dragSourceIndex)
+                inventory.MoveItem(_dragSourceIndex, captured);
+            _dropHandled = true;
         });
 
         // Drag move
