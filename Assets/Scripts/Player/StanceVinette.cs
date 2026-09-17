@@ -11,6 +11,7 @@ public class StanceVinette : MonoBehaviour
 
     private VolumeProfile _profile;
     private Vignette _vignette;
+    private Color _baseColor;
 
     public void Initialize(VolumeProfile profile)
     {
@@ -19,23 +20,32 @@ public class StanceVinette : MonoBehaviour
         if (!profile.TryGet(out _vignette))
             _vignette = profile.Add<Vignette>();
 
+        _baseColor = _vignette.color.value;
         _vignette.intensity.Override(min);
     }
 
-    public void UpdateVignette(float deltaTime, Stance stance)
+    public void UpdateVignette(float deltaTime, Stance stance) =>
+        UpdateVignette(deltaTime, stance, 0f, _baseColor, 0f);
+
+    public void UpdateVignette(float deltaTime, Stance stance,
+        float healthIntensity, Color healthColor, float healthBlend)
     {
-        float targetIntensity = stance switch
+        float stanceIntensity = stance switch
         {
             Stance.Prone => proneIntensity,
             Stance.Crouch or Stance.Slide => max,
             _ => min
         };
+        // Stance and health are independent inputs to one URP vignette. Taking
+        // the stronger value prevents prone/crouch from adding to critical
+        // health until the view is almost completely obscured.
+        float targetIntensity = Mathf.Clamp01(Mathf.Max(stanceIntensity,
+            Mathf.Max(0f, healthIntensity)));
+        Color targetColor = Color.Lerp(_baseColor, healthColor, Mathf.Clamp01(healthBlend));
+        float lerp = 1f - Mathf.Exp(-response * deltaTime);
 
-        _vignette.intensity.value = Mathf.Lerp
-            (
-                a: _vignette.intensity.value,
-                b: targetIntensity,
-                t: 1f - Mathf.Exp(-response * deltaTime)
-            );
+        _vignette.intensity.value = Mathf.Lerp(_vignette.intensity.value,
+            targetIntensity, lerp);
+        _vignette.color.value = Color.Lerp(_vignette.color.value, targetColor, lerp);
     }
 }

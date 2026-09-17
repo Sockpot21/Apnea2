@@ -15,10 +15,20 @@ public class ItemDefinitionEditor : Editor
         var item = (ItemDefinition)target;
 
         // ── Shared ────────────────────────────────────────────────────────────
-        EditorGUILayout.LabelField("Identity", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField(item.itemType == ItemType.Augment ? "Augment Identity" : "Identity", EditorStyles.boldLabel);
         EditorGUILayout.PropertyField(serializedObject.FindProperty("itemID"));
-        EditorGUILayout.PropertyField(serializedObject.FindProperty("displayName"));
-        EditorGUILayout.PropertyField(serializedObject.FindProperty("description"));
+        if (item.itemType != ItemType.Augment)
+        {
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("displayName"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("description"));
+        }
+        else
+        {
+            EditorGUILayout.HelpBox(
+                "The item ID must exactly match an AugmentCatalogue augment ID. " +
+                "The Modification Station gets the augment's name and description from that catalogue entry.",
+                MessageType.Info);
+        }
 
         EditorGUILayout.Space(4);
         EditorGUILayout.LabelField("Classification", EditorStyles.boldLabel);
@@ -70,12 +80,20 @@ public class ItemDefinitionEditor : Editor
         EditorGUILayout.LabelField("Weapon Data", EditorStyles.boldLabel);
         EditorGUILayout.PropertyField(serializedObject.FindProperty("weaponType"));
         EditorGUILayout.PropertyField(serializedObject.FindProperty("handedness"));
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("weaponDamage"));
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("weaponDamageType"));
 
         if (item.weaponType == WeaponType.Ranged)
         {
             EditorGUILayout.Space(4);
             EditorGUILayout.LabelField("Ranged Settings", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("bulletPrefab"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("ammoType"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("clipSize"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("fireMode"));
+            if (item.fireMode == FireMode.BurstFire)
+                EditorGUILayout.PropertyField(serializedObject.FindProperty("burstCount"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("roundsPerMinute"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("reloadTime"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("bulletSpeed"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("bulletDrop"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("bulletLifetime"));
@@ -85,8 +103,7 @@ public class ItemDefinitionEditor : Editor
         else
         {
             EditorGUILayout.HelpBox(
-                "Melee weapon — no additional fields yet. " +
-                "Attack logic will be added when the melee system is built out.",
+                "Melee attacks apply Weapon Damage to the first combat damage receiver hit.",
                 MessageType.Info);
         }
     }
@@ -105,19 +122,75 @@ public class ItemDefinitionEditor : Editor
 
     private void DrawConsumableFields()
     {
+        EditorGUILayout.LabelField("Consumable Treatment", EditorStyles.boldLabel);
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("consumableKind"));
+        var item = (ItemDefinition)target;
+        if (item.consumableKind == ConsumableKind.Ammo)
+        {
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("ammoType"));
+            EditorGUILayout.HelpBox(
+                "Ammo is consumed from inventory when a matching weapon finishes reloading. " +
+                "Make ammo items stackable and assign the same Ammo Type used by the weapon.",
+                MessageType.Info);
+            return;
+        }
+
+        if (item.consumableKind == ConsumableKind.Edible)
+        {
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField("Food", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("saturationRestore"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("isIngredient"));
+            EditorGUILayout.HelpBox(
+                "Edibles are consumed immediately, restore saturation, and do not open the limb selector.",
+                MessageType.Info);
+        }
+        else if (item.consumableKind is ConsumableKind.Healing or ConsumableKind.Biofluid)
+        {
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("healthRestore"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("biofluidRestore"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("restoresMaxHealth"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("treatableDamageTypes"), true);
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("removableConditions"), true);
+            EditorGUILayout.HelpBox(
+                "Healing consumables query the HealthManager for valid body-part targets. " +
+                "A blank damage-type or condition list means the item can treat any matching condition.",
+                MessageType.Info);
+        }
+
+        EditorGUILayout.Space(4);
+        EditorGUILayout.LabelField("Timed Player Stat Modifiers", EditorStyles.boldLabel);
+        SerializedProperty timedShared = serializedObject.FindProperty("timedEffectsShareTimer");
+        EditorGUILayout.PropertyField(timedShared, new GUIContent("Share Timer"));
+        if (timedShared.boolValue)
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("effectDuration"),
+                new GUIContent("Shared Duration"));
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("timedStatEffects"), true);
         EditorGUILayout.HelpBox(
-            "Consumable — no additional fields yet. " +
-            "Effect data will be added when the consumable system is built out.",
-            MessageType.Info);
+            "These modifiers use the same player-stat list as augments. Disable Share Timer to set a duration on each entry. " +
+            "Using the same consumable again refreshes its timer instead of stacking it.",
+            MessageType.None);
+
+        EditorGUILayout.Space(4);
+        EditorGUILayout.LabelField("Lifecycle Effects", EditorStyles.boldLabel);
+        SerializedProperty lifecycleShared = serializedObject.FindProperty("lifecycleEffectsShareTimer");
+        EditorGUILayout.PropertyField(lifecycleShared, new GUIContent("Share Timer"));
+        if (lifecycleShared.boolValue)
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("lifecycleEffectDuration"),
+                new GUIContent("Shared Duration"));
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("lifecycleEffects"), true);
+        EditorGUILayout.HelpBox(
+            "After Use fires after successful consumption. After Timed Effect Expires fires once the last timed modifier ends. " +
+            "Use Changes to expose only the relevant value and targeting controls.",
+            MessageType.None);
     }
 
     private void DrawAugmentFields()
     {
         EditorGUILayout.LabelField("Augment Data", EditorStyles.boldLabel);
-        EditorGUILayout.PropertyField(serializedObject.FindProperty("augmentID"));
         EditorGUILayout.HelpBox(
-                    "The Modification Station resolves this ID against its Augment Catalogue. " +
-                    "Augment items remain in the player inventory for now.",
+                    "No separate augment ID is needed. The Modification Station resolves this item's Item ID " +
+                    "against its Augment Catalogue. Augment items remain in the player inventory for now.",
                     MessageType.Info);
     }
 

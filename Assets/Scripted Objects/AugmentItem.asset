@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ccfd940126f153c42828d3556af138bd, type: 3}
   m_Name: AugmentItem
   m_EditorClassIdentifier: Assembly-CSharp::ItemDefinition
-  itemID: Synth_Muscle_Forearm_L_Item
+  itemID: Synth_Muscle_Forearm_L
   displayName: Synth Muscle Forearm Left
   description: blah blah blah
   itemType: 5
@@ -20,6 +20,10 @@ MonoBehaviour:
   slotColor: {r: 0.3, g: 0.6, b: 1, a: 1}
   icon: {fileID: 0}
   worldPrefab: {fileID: 7509819107877005441, guid: 0ef15a60f600c5d4e867a035ee5c255f, type: 3}
+  maxDurability: 100
+  degradationRate: 0.5
+  isStackable: 0
+  maxStackSize: 1
   weaponType: 0
   handedness: 0
   bulletPrefab: {fileID: 0}
@@ -44,4 +48,3 @@ MonoBehaviour:
     pumpsBiofluid: 0
     biofluidPumpEfficiency: 1
     healingRate: 0
-  augmentID: Synth_Muscle_Forearm_L

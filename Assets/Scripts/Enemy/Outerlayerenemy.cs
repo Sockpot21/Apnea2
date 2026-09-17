@@ -149,7 +149,7 @@ public class OuterLayerEnemy : MonoBehaviour, ICharacterController
         RuntimeSubPart outerLayer = null;
         for (int i = 0; i < bodyPart.layers.Count; i++)
         {
-            if (!bodyPart.layers[i].IsDestroyed)
+            if (bodyPart.layers[i].IsFunctional)
             {
                 outerLayer = bodyPart.layers[i];
                 break;

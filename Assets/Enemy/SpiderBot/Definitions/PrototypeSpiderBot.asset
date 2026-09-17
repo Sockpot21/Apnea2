@@ -1,0 +1,73 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5c313bdb40984857ab6592a04ca5da6b, type: 3}
+  m_Name: PrototypeSpiderBot
+  m_EditorClassIdentifier: Assembly-CSharp::SpiderBotDefinition
+  enemyID: prototype_spider_bot
+  displayName: Prototype Spider Bot
+  maximumHealth: 260
+  corpseImpulseMultiplier: 0.08
+  detectionRange: 36
+  moveSpeed: 6
+  turnResponse: 5
+  preferredCombatRange: 4.2
+  bodyMass: 58
+  centreOfMassOffset: {x: 0, y: -0.55, z: 0}
+  yawTorque: 4
+  neighbourRadius: 9
+  separationWeight: 4.5
+  cohesionWeight: 0.35
+  alignmentWeight: 0.55
+  obstacleProbeDistance: 5
+  obstacleAvoidanceWeight: 4
+  stanceWidth: 3.55
+  standingHeight: 2.55
+  stepDistance: 1.05
+  stepDuration: 0.19
+  stepHeight: 0.75
+  strideLead: 1.15
+  footProbeHeight: 4
+  footProbeDistance: 9
+  upperLegMass: 2
+  lowerLegMass: 1.5
+  footMass: 0.6
+  jointSpring: 6500
+  jointDamper: 220
+  jointMaximumForce: 25000
+  legSupportSpring: 950
+  legSupportDamper: 120
+  legPropulsionSpring: 160
+  legPropulsionDamper: 25
+  maximumLegActuatorForce: 1400
+  attackCooldown: 1.4
+  telegraphDuration: 0.42
+  stabRange: 5
+  stabDamage: 18
+  stabDamageType: 1
+  leapMinimumRange: 4.5
+  leapRange: 14
+  leapHorizontalSpeed: 13
+  leapVerticalSpeed: 7.5
+  leapDamage: 32
+  leapImpactRange: 3.3
+  leapCooldown: 4
+  leapDamageType: 2
+  burnRange: 12
+  burnConeAngle: 38
+  burnDamagePerPulse: 8
+  burnPulses: 3
+  burnPulseInterval: 0.35
+  burnCooldown: 6
+  shellColor: {r: 0.12, g: 0.16, b: 0.2, a: 1}
+  jointColor: {r: 0.28, g: 0.34, b: 0.4, a: 1}
+  eyeColor: {r: 1, g: 0.08, b: 0.02, a: 1}
+  burnColor: {r: 1, g: 0.22, b: 0.01, a: 0.8}

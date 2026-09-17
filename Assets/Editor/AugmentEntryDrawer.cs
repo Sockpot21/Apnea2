@@ -76,7 +76,7 @@ public class AugmentEntryDrawer : PropertyDrawer
             DrawField(ref y, position, property, "definition", "Body Part Definition", gap);
         }
 
-        DrawField(ref y, position, property, "statOverrides", "Player Stat Overrides", gap);
+        DrawField(ref y, position, property, "statOverrides", "Player Stat Modifiers", gap);
 
         EditorGUI.indentLevel--;
         EditorGUI.EndProperty();

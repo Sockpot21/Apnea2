@@ -46,7 +46,15 @@ MonoBehaviour:
         multiplier: 1.4
       - damageType: 4
         multiplier: 1.6
+      flammable: 1
+      flammabilityModifier: 1
       requiresBiofluid: 0
+      biofluidProfile:
+        type: 0
+        compatibilityGroup: organic
+        bleedRate: 0.5
+        coagulationCoefficient: 1
+        conductivity: 1
       biofluidRequirement: 0
       producesBiofluid: 0
       biofluidProductionRate: 0
@@ -87,7 +95,15 @@ MonoBehaviour:
         multiplier: 1.4
       - damageType: 4
         multiplier: 1.6
+      flammable: 1
+      flammabilityModifier: 1
       requiresBiofluid: 0
+      biofluidProfile:
+        type: 0
+        compatibilityGroup: organic
+        bleedRate: 0.5
+        coagulationCoefficient: 1
+        conductivity: 1
       biofluidRequirement: 0
       producesBiofluid: 0
       biofluidProductionRate: 0
@@ -96,7 +112,7 @@ MonoBehaviour:
       healingRate: 0
     statOverrides: []
   - augmentID: Nicole Watterson's fat ass
-    displayName: Synthetic Muscle Fibre (Left Forearm)
+    displayName: Nicole Watterson's fat ass
     description: Augmented muscle replacement. Higher HP, lower breach. Improved
       slash and blunt resistance.
     category: 1
@@ -108,7 +124,7 @@ MonoBehaviour:
       category: 0
       description: 
       subParts: []
-    targetSubPartCategory: 1
+    targetSubPartCategory: 2
     subPartDefinition:
       subPartID: synth_muscle_forearm_L
       displayName: Synthetic Muscle Fibre
@@ -128,7 +144,15 @@ MonoBehaviour:
         multiplier: 1.4
       - damageType: 4
         multiplier: 1.6
+      flammable: 1
+      flammabilityModifier: 1
       requiresBiofluid: 0
+      biofluidProfile:
+        type: 0
+        compatibilityGroup: organic
+        bleedRate: 0.5
+        coagulationCoefficient: 1
+        conductivity: 1
       biofluidRequirement: 0
       producesBiofluid: 0
       biofluidProductionRate: 0
@@ -169,7 +193,15 @@ MonoBehaviour:
         multiplier: 1.4
       - damageType: 4
         multiplier: 1.6
+      flammable: 1
+      flammabilityModifier: 1
       requiresBiofluid: 0
+      biofluidProfile:
+        type: 0
+        compatibilityGroup: organic
+        bleedRate: 0.5
+        coagulationCoefficient: 1
+        conductivity: 1
       biofluidRequirement: 0
       producesBiofluid: 0
       biofluidProductionRate: 0
@@ -177,3 +209,54 @@ MonoBehaviour:
       biofluidPumpEfficiency: 1
       healingRate: 0
     statOverrides: []
+  - augmentID: Synth_Heart
+    displayName: Synthetic Heart
+    description: Synthetic Heart Replacement
+    category: 1
+    targetBodyPart: 1
+    isSubPartAugment: 1
+    definition:
+      displayName: 
+      bodyPart: 0
+      category: 0
+      description: 
+      subParts: []
+    targetSubPartCategory: 3
+    subPartDefinition:
+      subPartID: Synth_Heart
+      displayName: Synthetic Heart
+      category: 3
+      isOrgan: 1
+      organHitChance: 0.03
+      maxHealth: 160
+      breachThreshold: 38
+      resistances:
+      - damageType: 0
+        multiplier: 0.8
+      - damageType: 1
+        multiplier: 1
+      - damageType: 2
+        multiplier: 0.7
+      - damageType: 3
+        multiplier: 1.4
+      - damageType: 4
+        multiplier: 1.6
+      flammable: 1
+      flammabilityModifier: 1
+      requiresBiofluid: 1
+      biofluidProfile:
+        type: 0
+        compatibilityGroup: organic
+        bleedRate: 0.5
+        coagulationCoefficient: 1
+        conductivity: 1
+      biofluidRequirement: 2
+      producesBiofluid: 0
+      biofluidProductionRate: 0
+      pumpsBiofluid: 1
+      biofluidPumpEfficiency: 2
+      healingRate: 3
+    statOverrides:
+    - stat: 0
+      value: 50
+      boolValue: 0

@@ -1,0 +1,45 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ccfd940126f153c42828d3556af138bd, type: 3}
+  m_Name: PistolAmmo
+  m_EditorClassIdentifier: Assembly-CSharp::ItemDefinition
+  itemID: pistol_ammo
+  displayName: Pistol Ammunition
+  description: Standard ammunition for pistols.
+  itemType: 3
+  slotColor: {r: 0.75, g: 0.55, b: 0.18, a: 1}
+  icon: {fileID: 0}
+  worldPrefab: {fileID: 0}
+  maxDurability: 100
+  degradationRate: 0
+  isStackable: 1
+  maxStackSize: 60
+  weaponType: 0
+  handedness: 0
+  ammoType: {fileID: 11400000, guid: b4270cd8027f4a13bdcb86fd8812c933, type: 2}
+  clipSize: 1
+  fireMode: 0
+  burstCount: 3
+  roundsPerMinute: 60
+  reloadTime: 1
+  bulletSpeed: 30
+  bulletDrop: 9.81
+  bulletLifetime: 5
+  aimFOV: 45
+  targetBodyPart: 0
+  bagSlotCapacity: 10
+  consumableKind: 3
+  healthRestore: 0
+  biofluidRestore: 0
+  restoresMaxHealth: 0
+  treatableDamageTypes: []
+  removableConditions: []

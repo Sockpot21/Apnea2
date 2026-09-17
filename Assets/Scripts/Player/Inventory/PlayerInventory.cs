@@ -31,6 +31,16 @@ public class PlayerInventory : MonoBehaviour
 
     public int SlotCount => _slots.Length;
 
+    /// <summary>Enumerates the occupied inventory slots without exposing the slot array itself.</summary>
+    public IEnumerable<ItemInstance> Items
+    {
+        get
+        {
+            foreach (var item in _slots)
+                if (item != null) yield return item;
+        }
+    }
+
     public int UsedSlots
     {
         get
@@ -43,22 +53,88 @@ public class PlayerInventory : MonoBehaviour
 
     public ItemInstance GetSlot(int index) => _slots[index];
 
+    public bool CanAdd(ItemInstance item)
+    {
+        if (item?.definition == null) return false;
+        if (!item.definition.isStackable) return HasSpace();
+
+        int needed = Mathf.Max(1, item.stackCount);
+        int maximum = Mathf.Max(1, item.definition.maxStackSize);
+        foreach (ItemInstance slot in _slots)
+        {
+            if (slot == null) needed -= maximum;
+            else if (slot.definition == item.definition)
+                needed -= Mathf.Max(0, maximum - slot.stackCount);
+            if (needed <= 0) return true;
+        }
+        return false;
+    }
+
+    public int CountAmmo(AmmoTypeDefinition ammoType)
+    {
+        if (ammoType == null) return 0;
+        int total = 0;
+        foreach (ItemInstance item in _slots)
+            if (item?.definition != null && item.definition.IsAmmo && item.definition.ammoType == ammoType)
+                total += Mathf.Max(0, item.stackCount);
+        return total;
+    }
+
+    /// <summary>Consumes up to amount rounds and returns the quantity actually removed.</summary>
+    public int ConsumeAmmo(AmmoTypeDefinition ammoType, int amount)
+    {
+        if (ammoType == null || amount <= 0) return 0;
+        int remaining = amount;
+        for (int i = 0; i < _slots.Length && remaining > 0; i++)
+        {
+            ItemInstance item = _slots[i];
+            if (item?.definition == null || !item.definition.IsAmmo || item.definition.ammoType != ammoType)
+                continue;
+            int consumed = Mathf.Min(remaining, Mathf.Max(0, item.stackCount));
+            item.stackCount -= consumed;
+            remaining -= consumed;
+            if (item.stackCount <= 0) _slots[i] = null;
+        }
+        int totalConsumed = amount - remaining;
+        if (totalConsumed > 0) OnInventoryChanged?.Invoke();
+        return totalConsumed;
+    }
+
     /// <summary>Adds item to a matching stack if possible, else the first empty slot. Returns true on success.</summary>
     public bool TryAdd(ItemInstance item)
     {
+        if (!CanAdd(item))
+        {
+            Debug.Log("[Inventory] Full — could not add item or complete stack.");
+            return false;
+        }
         if (item.definition.isStackable)
         {
-            for (int i = 0; i < _slots.Length; i++)
+            int quantity = Mathf.Max(1, item.stackCount);
+            int maximum = Mathf.Max(1, item.definition.maxStackSize);
+            int remaining = quantity;
+            for (int i = 0; i < _slots.Length && remaining > 0; i++)
             {
-                if (_slots[i] != null && _slots[i].definition == item.definition
-                    && _slots[i].stackCount < item.definition.maxStackSize)
-                {
-                    _slots[i].stackCount++;
-                    OnInventoryChanged?.Invoke();
-                    Debug.Log($"[Inventory] Stacked '{item.definition.displayName}' in slot {i} ({_slots[i].stackCount}/{item.definition.maxStackSize}).");
-                    return true;
-                }
+                if (_slots[i] == null || _slots[i].definition != item.definition) continue;
+                int added = Mathf.Min(remaining, maximum - _slots[i].stackCount);
+                _slots[i].stackCount += added;
+                remaining -= added;
             }
+            bool usedOriginal = false;
+            for (int i = 0; i < _slots.Length && remaining > 0; i++)
+            {
+                if (_slots[i] != null) continue;
+                int added = Mathf.Min(remaining, maximum);
+                ItemInstance stack = usedOriginal ? new ItemInstance(item.definition, added) : item;
+                stack.stackCount = added;
+                stack.currentDurability = item.currentDurability;
+                _slots[i] = stack;
+                usedOriginal = true;
+                remaining -= added;
+            }
+            OnInventoryChanged?.Invoke();
+            Debug.Log($"[Inventory] Added {quantity} × '{item.definition.displayName}'.");
+            return true;
         }
 
         for (int i = 0; i < _slots.Length; i++)
@@ -86,6 +162,19 @@ public class PlayerInventory : MonoBehaviour
         OnInventoryChanged?.Invoke();
         Debug.Log($"[Inventory] Removed '{item.definition.displayName}' from slot {index}.");
         return item;
+    }
+
+    /// <summary>Removes this exact runtime item instance, wherever it currently sits.</summary>
+    public bool TryRemove(ItemInstance item)
+    {
+        if (item == null) return false;
+        for (int i = 0; i < _slots.Length; i++)
+        {
+            if (!ReferenceEquals(_slots[i], item)) continue;
+            RemoveAt(i);
+            return true;
+        }
+        return false;
     }
 
     /// <summary>Moves the item at fromIndex into toIndex, swapping with whatever is already there (if anything).</summary>

@@ -22,11 +22,24 @@ public class Player : MonoBehaviour
     [SerializeField] private CameraFOV cameraFOV;
     [SerializeField] private Volume volume;
     [SerializeField] private StanceVinette stanceVignette;
+    [SerializeField] private OrganicScreenFeedback organicScreenFeedback;
     [SerializeField] private HealthManager healthManager;
     [SerializeField] private PlayerEquipment playerEquipment;
     [SerializeField] private GrapplingHook grapplingHook;
 
     private PlayerInput _inputActions;
+    private bool _gameOver;
+
+    public void SetGameOverInput(bool gameOver)
+    {
+        _gameOver = gameOver;
+        if (_gameOver)
+        {
+            _inputActions?.Disable();
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
+    }
 
     void Start()
     {
@@ -42,6 +55,12 @@ public class Player : MonoBehaviour
         cameraLean.Initialize();
         cameraFOV.Initialize();
         stanceVignette.Initialize(volume.profile);
+        if (healthManager == null)
+            healthManager = GetComponent<HealthManager>() ?? GetComponentInChildren<HealthManager>();
+        if (organicScreenFeedback == null)
+            organicScreenFeedback = GetComponent<OrganicScreenFeedback>()
+                ?? gameObject.AddComponent<OrganicScreenFeedback>();
+        organicScreenFeedback.Initialize(volume.profile, playerCharacter, healthManager);
     }
 
     private void OnDestroy()
@@ -65,6 +84,7 @@ public class Player : MonoBehaviour
 
     private void Update()
     {
+        if (_gameOver) return;
         if (!GetComponent<PlayerInteraction>()._uiOpen)
             Cursor.lockState = CursorLockMode.Locked;
 
@@ -140,7 +160,14 @@ public class Player : MonoBehaviour
                 playerEquipment.IsAiming, playerEquipment.AimFOV);
         }
 
-        stanceVignette.UpdateVignette(deltaTime, state.Stance);
+        organicScreenFeedback?.UpdateFeedback(deltaTime);
+        if (organicScreenFeedback != null)
+            stanceVignette.UpdateVignette(deltaTime, state.Stance,
+                organicScreenFeedback.HealthVignetteIntensity,
+                organicScreenFeedback.HealthVignetteColor,
+                organicScreenFeedback.HealthVignetteBlend);
+        else
+            stanceVignette.UpdateVignette(deltaTime, state.Stance);
     }
 
     public void Teleport(Vector3 position) => playerCharacter.SetPosition(position);

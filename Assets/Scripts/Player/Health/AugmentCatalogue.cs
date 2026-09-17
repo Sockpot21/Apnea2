@@ -21,18 +21,35 @@ public enum PlayerAugmentStat
     WallRunCooldown, WallDetectRadius, WallNormalTolerance, WallRunPitchThreshold,
     VerticalWallRunStartSpeed, VerticalWallRunDuration, VerticalWallRunDecayRate,
     WallRunArcHeight,
-    ProneHeight, ProneSpeed, ProneResponse
+    ProneHeight, ProneSpeed, ProneResponse,
+    MaxSaturation, SaturationDepletionRate,
+    MaxStamina, SprintStamina, JumpStamina, StaminaRegen, StaminaRegenDelay,
+    VerticalWallRunMaxDownwardSpeed,
+    HorizontalWallRunVerticalVelocityDeadZone,
+    HorizontalWallRunVerticalVelocityRetention,
+    MovingStaminaRegen
+}
+
+public enum PlayerStatModifierMode
+{
+    Override,
+    PercentageIncrease,
+    PercentageDecrease
 }
 
 [System.Serializable]
 public class AugmentStatOverride
 {
-    [Tooltip("The player-controller stat this augment overrides while its body part is functional.")]
+    [Tooltip("The player-controller stat this modifier changes while it is active.")]
     public PlayerAugmentStat stat;
-    [Tooltip("Value used for numeric stats.")]
+    [Tooltip("Override replaces the stat. Percentage modes change the effective value by this percentage and compose in list order. Toggle stats always use Bool Value.")]
+    public PlayerStatModifierMode mode = PlayerStatModifierMode.Override;
+    [Tooltip("Absolute value for Override, or a positive percentage such as 15 for percentage modes.")]
     public float value;
     [Tooltip("Value used for toggle stats (Sprint Enabled, Double Jump Enabled, Wall Run Enabled).")]
     public bool boolValue;
+    [Min(0f), Tooltip("Per-effect duration used only when this modifier belongs to a consumable with Share Timer disabled.")]
+    public float duration = 1f;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -68,8 +85,8 @@ public class AugmentEntry
     [Tooltip("The replacement sub-part definition. Used when isSubPartAugment is true.")]
     public SubPartDefinition subPartDefinition;
 
-    [Header("Player Stat Overrides")]
-    [Tooltip("Only add stats this augment changes. Each value is an override, not an additive bonus.")]
+    [Header("Player Stat Modifiers")]
+    [Tooltip("Only add stats this augment changes. Numeric stats may be overridden or changed by a percentage.")]
     public List<AugmentStatOverride> statOverrides = new List<AugmentStatOverride>();
 }
 

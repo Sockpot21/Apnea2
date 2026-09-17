@@ -74,11 +74,18 @@ public class PlayerInteraction : MonoBehaviour
             if (_inputActions.Gameplay.Interact.WasPressedThisFrame())
                 TryInteract();
 
-            if (_inputActions.Gameplay.UseLeft.WasPressedThisFrame())
-                playerEquipment?.UseLeftHand();
+            playerEquipment?.HandleUseInput(
+                HandSlot.Left,
+                _inputActions.Gameplay.UseLeft.WasPressedThisFrame(),
+                _inputActions.Gameplay.UseLeft.IsPressed());
 
-            if (_inputActions.Gameplay.UseRight.WasPressedThisFrame())
-                playerEquipment?.UseRightHand();
+            playerEquipment?.HandleUseInput(
+                HandSlot.Right,
+                _inputActions.Gameplay.UseRight.WasPressedThisFrame(),
+                _inputActions.Gameplay.UseRight.IsPressed());
+
+            if (_inputActions.Gameplay.Reload.WasPressedThisFrame())
+                playerEquipment?.ReloadAll();
 
             if (_inputActions.Gameplay.Aim.WasPressedThisFrame())
                 playerEquipment?.ToggleAim();
@@ -192,6 +199,9 @@ public class PlayerInteraction : MonoBehaviour
         if (station != null)
         {
             if (inventoryUI != null && inventoryUI.IsOpen) inventoryUI.Close();
+            // Pass the same inventory instance used for pickup collection to the
+            // station, rather than making the UI search the scene for one.
+            stationUI?.SetInventory(playerInventory);
             station.Interact();
         }
     }
@@ -203,9 +213,15 @@ public class PlayerInteraction : MonoBehaviour
             Debug.LogWarning("[Interact] No PlayerInventory assigned.");
             return;
         }
-        if (!playerInventory.HasSpace())
+        ItemInstance pendingItem = pickup.Item;
+        if (pendingItem == null || pendingItem.definition == null)
         {
-            Debug.Log("[Interact] Inventory full.");
+            Debug.LogWarning("[Interact] Pickup has no valid item data.");
+            return;
+        }
+        if (!playerInventory.CanAdd(pendingItem))
+        {
+            Debug.Log("[Interact] Inventory cannot fit the complete pickup stack.");
             return;
         }
 

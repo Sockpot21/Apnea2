@@ -11,6 +11,7 @@ public class ModificationStationUI : MonoBehaviour
 {
     [Header("Core References")]
     [SerializeField] private HealthManager healthManager;
+    [SerializeField] private PlayerInventory inventory;
     [SerializeField] private AugmentCatalogue augmentCatalogue;
     [SerializeField] private RectTransform canvasRect;
 
@@ -57,7 +58,7 @@ public class ModificationStationUI : MonoBehaviour
     // Runtime state
     private BodyPart _selectedPart = BodyPart.Head;
     private bool _statusTabActive = false;
-    private AugmentEntry _pending;
+    private OwnedAugment? _pending;
 
     // Tab tracking
     private readonly List<Image> _tabImages = new();
@@ -87,6 +88,12 @@ public class ModificationStationUI : MonoBehaviour
     public event System.Action OnUIOpened;
     public event System.Action OnUIClosed;
     public bool IsOpen => _root != null && _root.activeSelf;
+
+    /// <summary>Sets the inventory whose owned augments this station may display.</summary>
+    public void SetInventory(PlayerInventory playerInventory)
+    {
+        inventory = playerInventory;
+    }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -682,7 +689,7 @@ public class ModificationStationUI : MonoBehaviour
                 float spRatio = sp.maxHealth > 0f ? sp.currentHealth / sp.maxHealth : 0f;
                 sw.hpLabel.text = $"{sp.currentHealth:F0}/{sp.maxHealth:F0}";
                 sw.hpBar.fillAmount = spRatio;
-                sw.hpBar.color = sp.IsDestroyed ? ColDestroyed : ColSubBar;
+                sw.hpBar.color = sp.IsDepleted || sp.IsDestroyed ? ColDestroyed : ColSubBar;
             }
         }
     }
@@ -695,25 +702,65 @@ public class ModificationStationUI : MonoBehaviour
             if (row != null) Destroy(row);
         _augRows.Clear();
 
-        var augments = augmentCatalogue != null
-            ? augmentCatalogue.GetAugmentsForBodyPart(part)
-            : new List<AugmentEntry>();
+        var ownedAugments = GetOwnedAugmentsForBodyPart(part);
 
-        if (augments.Count == 0)
+        if (ownedAugments.Count == 0)
         {
-            _augRows.Add(MakeEmptyRow("No augments available for this body part."));
+            _augRows.Add(MakeEmptyRow("No owned augments fit this body part."));
             return;
         }
 
-        foreach (var entry in augments)
-            _augRows.Add(MakeAugmentRow(entry));
+        foreach (var ownedAugment in ownedAugments)
+            _augRows.Add(MakeAugmentRow(ownedAugment));
 
         Canvas.ForceUpdateCanvases();
         LayoutRebuilder.ForceRebuildLayoutImmediate(_listContent.GetComponent<RectTransform>());
     }
 
-    private GameObject MakeAugmentRow(AugmentEntry entry)
+    private List<OwnedAugment> GetOwnedAugmentsForBodyPart(BodyPart part)
     {
+        var result = new List<OwnedAugment>();
+        if (inventory == null || augmentCatalogue == null) return result;
+
+        // Inventory owns availability. The catalogue only supplies the data for an
+        // item whose normal item ID matches an augment ID.
+        var indicesByAugmentId = new Dictionary<string, int>();
+        foreach (var item in inventory.Items)
+        {
+            if (item.definition == null || !item.definition.IsAugment ||
+                item.IsBroken ||
+                string.IsNullOrWhiteSpace(item.definition.itemID) ||
+                !augmentCatalogue.TryGetAugment(item.definition.itemID, out var entry) ||
+                entry.targetBodyPart != part)
+                continue;
+
+            int quantity = Mathf.Max(1, item.stackCount);
+            if (indicesByAugmentId.TryGetValue(entry.augmentID, out int index))
+            {
+                var owned = result[index];
+                owned.quantity += quantity;
+                result[index] = owned;
+                continue;
+            }
+
+            indicesByAugmentId.Add(entry.augmentID, result.Count);
+            result.Add(new OwnedAugment { entry = entry, item = item, quantity = quantity });
+        }
+
+        return result;
+    }
+
+    private struct OwnedAugment
+    {
+        public AugmentEntry entry;
+        public ItemInstance item;
+        public int quantity;
+    }
+
+    private GameObject MakeAugmentRow(OwnedAugment ownedAugment)
+    {
+        var entry = ownedAugment.entry;
+        int quantity = ownedAugment.quantity;
         var row = MakeRect($"Row_{entry.augmentID}", _listContent);
         var le = row.AddComponent<LayoutElement>();
         le.preferredHeight = 84f;
@@ -722,8 +769,7 @@ public class ModificationStationUI : MonoBehaviour
 
         var btn = row.AddComponent<Button>();
         StyleBtn(btn, ColRowNormal, ColRowHover);
-        var captured = entry;
-        btn.onClick.AddListener(() => RequestInstall(captured));
+        btn.onClick.AddListener(() => RequestInstall(ownedAugment));
 
         var accent = MakeRect("Accent", row.transform);
         var accentRT = accent.GetComponent<RectTransform>();
@@ -746,7 +792,8 @@ public class ModificationStationUI : MonoBehaviour
         vlg.childControlWidth = true;
         vlg.childControlHeight = false;
 
-        AddRowLabel(textBlock.transform, entry.displayName, 14, Color.white, 20f, true);
+        string title = quantity > 1 ? $"{entry.displayName}  ×{quantity}" : entry.displayName;
+        AddRowLabel(textBlock.transform, title, 14, Color.white, 20f, true);
         string tag = entry.isSubPartAugment
             ? $"Sub-Part  ·  {entry.targetSubPartCategory}  ·  {entry.category}"
             : $"Full Replacement  ·  {entry.category}";
@@ -791,9 +838,10 @@ public class ModificationStationUI : MonoBehaviour
 
     // ── Confirm ───────────────────────────────────────────────────────────────
 
-    private void RequestInstall(AugmentEntry entry)
+    private void RequestInstall(OwnedAugment augment)
     {
-        _pending = entry;
+        _pending = augment;
+        var entry = augment.entry;
         string scope = entry.isSubPartAugment
             ? $"{entry.targetSubPartCategory} on {entry.targetBodyPart}"
             : $"entire {entry.targetBodyPart}";
@@ -805,10 +853,22 @@ public class ModificationStationUI : MonoBehaviour
     private void ConfirmInstall()
     {
         if (_pending == null) return;
-        if (_pending.isSubPartAugment)
-            healthManager.InstallSubPartAugment(_pending.augmentID);
-        else
-            healthManager.InstallFullAugment(_pending.augmentID);
+
+        var pending = _pending.Value;
+        if (inventory == null || healthManager == null || !inventory.TryRemove(pending.item))
+        {
+            Debug.LogWarning("[ModificationStation] The selected augment is no longer in the inventory.");
+            _pending = null;
+            _confirmOverlay.SetActive(false);
+            PopulateAugmentList(_selectedPart);
+            return;
+        }
+
+        if (!healthManager.TryInstallAugment(pending.item))
+        {
+            inventory.TryAdd(pending.item);
+            Debug.LogWarning($"[ModificationStation] Could not install '{pending.entry.displayName}'.");
+        }
         _pending = null;
         _confirmOverlay.SetActive(false);
         PopulateAugmentList(_selectedPart);

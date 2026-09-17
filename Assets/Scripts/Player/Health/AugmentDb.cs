@@ -46,21 +46,33 @@ public enum AugmentCategory
 
 public enum SubPartCategory
 {
-    // ── Equipped armour (outermost, index 0 when present) ─────────────────────
-    Armour,
+    // Explicit values preserve all existing ScriptableObject enum serialization.
+    Skin = 0,
+    Muscle = 1,
+    Bone = 2,
+    Heart = 3,
+    Lung = 4,
+    Stomach = 5,
+    Intestines = 6,
+    Eye = 7,
+    Brain = 8,
 
-    // ── Structural layers — damage cascade order (outer → inner) ─────────────
-    Skin,
-    Muscle,
-    Bone,
+    // Armour is inserted at runtime as the outermost layer. Keeping it last
+    // avoids shifting every pre-existing anatomical category.
+    Armour = 9
+}
 
-    // ── Internal organs — roll-based, not in cascade order ───────────────────
-    Heart,
-    Lung,
-    Stomach,
-    Intestines,
-    Eye,
-    Brain
+public enum BiofluidType { Natural, Multiframe, NonOrganic }
+
+[System.Serializable]
+public class BiofluidProfile
+{
+    public BiofluidType type = BiofluidType.Natural;
+    [Tooltip("Compatible profiles contribute to one shared body pool. Incompatible profiles form an isolated pool.")]
+    public string compatibilityGroup = "organic";
+    [Min(0f)] public float bleedRate = 0.5f;
+    [Min(0f)] public float coagulationCoefficient = 1f;
+    [Range(0f, 1f)] public float conductivity = 1f;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -72,8 +84,7 @@ public class ResistanceEntry
 {
     public DamageType damageType;
 
-    [Tooltip("Damage multiplier for this type.\n" +
-             "1.0 = neutral | 1.2 = 20% more damage | 0.8 = 20% less damage")]
+    [Tooltip("Damage-type coefficient used by the cascade. Higher values carry more damage onward.")]
     public float multiplier = 1f;
 }
 
@@ -103,9 +114,14 @@ public class SubPartDefinition
 
     public List<ResistanceEntry> resistances = new List<ResistanceEntry>();
 
+    [Header("Fire")]
+    public bool flammable = true;
+    [Min(0.01f)] public float flammabilityModifier = 1f;
+
     [Header("Biofluid")]
     [Tooltip("Whether this sub-part consumes biofluid while regenerating.")]
     public bool requiresBiofluid;
+    public BiofluidProfile biofluidProfile = new BiofluidProfile();
     [Min(0f)]
     [Tooltip("Total biofluid this sub-part requires when functional.")]
     public float biofluidRequirement;

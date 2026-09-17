@@ -23,6 +23,11 @@ public class BodyPartCondition
     /// 1.0 = fully intact, 0.0 = completely destroyed.
     /// </summary>
     public float conditionRatio;
+    public float currentHealth;
+    public float maxHealth;
+    public float baseMaxHealth;
+    public bool isDisabled;
+    public bool isDestroyed;
 
     /// <summary>Convenience: condition as a 0–100 percentage.</summary>
     public float ConditionPercent => conditionRatio * 100f;
@@ -34,11 +39,25 @@ public class BodyPartCondition
 public class SubPartCondition
 {
     public string displayName;
+    public SubPartCategory category;
     public bool isOrgan;
+    public float baseMaxHealth;
     public float currentHealth;
     public float maxHealth;
     public float HealthRatio => maxHealth > 0f ? currentHealth / maxHealth : 0f;
-    public bool IsDestroyed => currentHealth <= 0f;
+    public bool IsDepleted => currentHealth <= 0f;
+    public bool IsDestroyed => maxHealth <= 0f;
+    public List<HealthConditionSnapshot> activeConditions = new List<HealthConditionSnapshot>();
+}
+
+public class HealthConditionSnapshot
+{
+    public HealthConditionType type;
+    public DamageType sourceDamageType;
+    public float remainingSeconds;
+    public bool requiresTreatment;
+
+    public bool IsPermanent => remainingSeconds < 0f || requiresTreatment;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -132,8 +151,6 @@ public class PlayerHealth : MonoBehaviour
         // Forward full result for HUD / combat log
         OnDamageProcessed?.Invoke(result);
 
-        // Death check — all body parts at 0 condition
-        CheckDeath();
     }
 
     /// <summary>Updates only the body-part rows changed by passive regeneration.</summary>
@@ -161,6 +178,18 @@ public class PlayerHealth : MonoBehaviour
     /// <summary>Returns all current body part conditions.</summary>
     public IReadOnlyDictionary<BodyPart, BodyPartCondition> GetAllConditions() => _conditions;
 
+    /// <summary>Creates a fresh UI-safe snapshot from live runtime health data.</summary>
+    public BodyPartCondition BuildLiveSnapshot(RuntimeBodyPart runtimePart) =>
+        BuildCondition(runtimePart);
+
+    public void NotifyDeath()
+    {
+        if (_isDead) return;
+        _isDead = true;
+        Debug.Log("[PlayerHealth] Player has died.");
+        OnPlayerDeath?.Invoke();
+    }
+
     /// <summary>
     /// Overall body condition: average of all body part condition ratios.
     /// 1.0 = fully healthy, 0.0 = dead.
@@ -185,47 +214,61 @@ public class PlayerHealth : MonoBehaviour
         {
             bodyPart = runtimePart.bodyPart,
             displayName = runtimePart.displayName,
-            conditionRatio = runtimePart.ConditionRatio
+            conditionRatio = runtimePart.ConditionRatio,
+            currentHealth = runtimePart.CurrentStructuralHealth,
+            maxHealth = runtimePart.maxHealth,
+            baseMaxHealth = runtimePart.baseMaxHealth,
+            isDisabled = runtimePart.IsDisabled,
+            isDestroyed = runtimePart.IsDestroyed
         };
 
         // Structural layers
         foreach (var layer in runtimePart.layers)
         {
-            condition.subPartConditions.Add(new SubPartCondition
+            var snapshot = new SubPartCondition
             {
                 displayName = layer.displayName,
+                category = layer.category,
                 isOrgan = false,
+                baseMaxHealth = layer.baseMaxHealth,
                 currentHealth = layer.currentHealth,
                 maxHealth = layer.maxHealth
-            });
+            };
+            CopyConditions(layer, snapshot);
+            condition.subPartConditions.Add(snapshot);
         }
 
         // Organs
         foreach (var organ in runtimePart.organs)
         {
-            condition.subPartConditions.Add(new SubPartCondition
+            var snapshot = new SubPartCondition
             {
                 displayName = organ.displayName,
+                category = organ.category,
                 isOrgan = true,
+                baseMaxHealth = organ.baseMaxHealth,
                 currentHealth = organ.currentHealth,
                 maxHealth = organ.maxHealth
-            });
+            };
+            CopyConditions(organ, snapshot);
+            condition.subPartConditions.Add(snapshot);
         }
 
         return condition;
     }
 
-    private void CheckDeath()
+    private static void CopyConditions(RuntimeSubPart source, SubPartCondition target)
     {
-        if (_isDead) return;
-
-        // Death when overall condition hits 0 (all sub-parts across all parts destroyed)
-        // You can swap this threshold for a different condition (e.g. vital organ destroyed)
-        if (OverallCondition <= 0f)
+        foreach (var active in source.conditions)
         {
-            _isDead = true;
-            Debug.Log("[PlayerHealth] Player has died.");
-            OnPlayerDeath?.Invoke();
+            target.activeConditions.Add(new HealthConditionSnapshot
+            {
+                type = active.type,
+                sourceDamageType = active.sourceDamageType,
+                remainingSeconds = active.remainingSeconds,
+                requiresTreatment = active.requiresTreatment
+            });
         }
     }
+
 }

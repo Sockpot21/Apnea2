@@ -16,18 +16,36 @@ MonoBehaviour:
   displayName: Iron Helmet
   description: Some chrome for your dome
   itemType: 2
-  weight: 5
   slotColor: {r: 0.3, g: 0.6, b: 1, a: 1}
+  icon: {fileID: 0}
   worldPrefab: {fileID: 92134995507872252, guid: 0704f01a9a12130419351eeea59a7495, type: 3}
+  maxDurability: 100
+  degradationRate: 0.5
+  isStackable: 0
+  maxStackSize: 1
   weaponType: 0
   handedness: 0
+  bulletPrefab: {fileID: 0}
+  bulletSpeed: 30
+  bulletDrop: 9.81
+  bulletLifetime: 5
+  aimFOV: 45
   targetBodyPart: 0
   layerStats:
     subPartID: 
     displayName: 
-    category: 0
+    category: 9
     isOrgan: 0
     organHitChance: 0
     maxHealth: 200
     breachThreshold: 30
     resistances: []
+    requiresBiofluid: 0
+    biofluidRequirement: 0
+    producesBiofluid: 0
+    biofluidProductionRate: 0
+    pumpsBiofluid: 0
+    biofluidPumpEfficiency: 1
+    healingRate: 0
+  augmentID: 
+  bagSlotCapacity: 10

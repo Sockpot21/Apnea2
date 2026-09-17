@@ -1,55 +1,69 @@
-// Bullet.cs
-// Pure vector-based bullet. No Rigidbody needed on the prefab.
-// Stats are set by PlayerEquipment after instantiation.
-// Attach this to your bullet prefab.
-
 using UnityEngine;
 
+/// <summary>Vector-based swept projectile configured by PlayerEquipment.</summary>
 public class Bullet : MonoBehaviour
 {
-    // Set by PlayerEquipment after Instantiate
     [HideInInspector] public float speed = 30f;
-    [HideInInspector] public float drop = 9.81f; // units/s² downward acceleration
-    [HideInInspector] public float lifetime = 5f;    // 0 = never despawn
+    [HideInInspector] public float drop = 9.81f;
+    [HideInInspector] public float lifetime = 5f;
+    [HideInInspector] public float damage = 20f;
+    [HideInInspector] public DamageType damageType = DamageType.Pierce;
 
     private Vector3 _velocity;
     private float _elapsed;
+    private GameObject _source;
 
-    public void Launch(Vector3 direction, Vector3 inheritedVelocity)
+    public void Launch(Vector3 direction, Vector3 inheritedVelocity, GameObject source = null)
     {
-        // Inherit the shooter's velocity so bullets feel natural when moving
         _velocity = direction.normalized * speed + inheritedVelocity;
         _elapsed = 0f;
+        _source = source;
     }
 
     private void Update()
     {
-        float dt = Time.deltaTime;
-
-        // Lifetime check — 0 means never despawn
+        float deltaTime = Time.deltaTime;
         if (lifetime > 0f)
         {
-            _elapsed += dt;
-            if (_elapsed >= lifetime) { Destroy(gameObject); return; }
+            _elapsed += deltaTime;
+            if (_elapsed >= lifetime)
+            {
+                Destroy(gameObject);
+                return;
+            }
         }
 
-        // Apply bullet drop (pure downward acceleration, independent of physics)
-        _velocity += Vector3.down * drop * dt;
-
-        // Sweep raycast so fast bullets don't tunnel through thin geometry
-        var delta = _velocity * dt;
-        if (Physics.Raycast(transform.position, delta.normalized, out var hit, delta.magnitude))
+        _velocity += Vector3.down * drop * deltaTime;
+        Vector3 delta = _velocity * deltaTime;
+        if (delta.sqrMagnitude > Mathf.Epsilon)
         {
-            Debug.Log($"[Bullet] Hit: {hit.collider.name}");
-            // TODO: call HealthManager.ReceiveDamage when damage system is wired up
-            Destroy(gameObject);
-            return;
+            RaycastHit[] hits = Physics.RaycastAll(transform.position, delta.normalized,
+                delta.magnitude, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+            System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            foreach (RaycastHit hit in hits)
+            {
+                if (_source != null && (hit.collider.transform == _source.transform
+                    || hit.collider.transform.IsChildOf(_source.transform))) continue;
+                ApplyDamage(hit);
+                Debug.Log($"[Bullet] Hit: {hit.collider.name}");
+                Destroy(gameObject);
+                return;
+            }
         }
 
         transform.position += delta;
-
-        // Orient along travel direction
-        if (_velocity.sqrMagnitude > 0.01f)
+        if (_velocity.sqrMagnitude > .01f)
             transform.rotation = Quaternion.LookRotation(_velocity);
+    }
+
+    private void ApplyDamage(RaycastHit hit)
+    {
+        foreach (MonoBehaviour component in hit.collider.GetComponentsInParent<MonoBehaviour>())
+        {
+            if (component is not ICombatDamageReceiver receiver) continue;
+            receiver.ReceiveCombatDamage(new CombatDamage(damage, damageType, hit.point,
+                _velocity.normalized * Mathf.Max(1f, damage * .18f), _source));
+            return;
+        }
     }
 }

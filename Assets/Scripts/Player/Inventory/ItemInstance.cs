@@ -11,20 +11,43 @@ public class ItemInstance
     public ItemDefinition definition;
     public float currentDurability;
     public int stackCount;
+    public int currentClipAmmo;
+    public bool magazineInitialized;
+
+    [System.NonSerialized] public bool isReloading;
+    [System.NonSerialized] public float reloadEndsAt;
+    [System.NonSerialized] public float nextAllowedFireTime;
 
     public ItemInstance(ItemDefinition definition, int stackCount = 1)
     {
         this.definition = definition;
         this.currentDurability = definition.maxDurability;
         this.stackCount = stackCount;
+        InitializeMagazineIfNeeded();
     }
 
-    /// <summary>Reduces durability by the item's degradationRate. Call on use (e.g. each shot).</summary>
+    public void InitializeMagazineIfNeeded()
+    {
+        if (magazineInitialized || definition == null || !definition.IsRanged) return;
+        currentClipAmmo = Mathf.Max(1, definition.clipSize);
+        magazineInitialized = true;
+    }
+
+    /// <summary>Applies a source amount scaled by this item's degradation rate.</summary>
+    public void ApplyDurabilityDamage(float sourceAmount)
+    {
+        if (definition == null || definition.degradationRate <= 0f || sourceAmount <= 0f) return;
+        currentDurability = Mathf.Max(0f, currentDurability - sourceAmount * definition.degradationRate);
+    }
+
+    /// <summary>Convenience overload for a single use, such as firing one shot.</summary>
     public void Degrade()
     {
-        if (definition.degradationRate <= 0f) return;
-        currentDurability = Mathf.Max(0f, currentDurability - definition.degradationRate);
+        ApplyDurabilityDamage(1f);
     }
 
-    public bool IsBroken => definition.degradationRate > 0f && currentDurability <= 0f;
+    /// <summary>Forces an item into its broken state when its runtime protection is destroyed.</summary>
+    public void Break() => currentDurability = 0f;
+
+    public bool IsBroken => currentDurability <= 0f;
 }

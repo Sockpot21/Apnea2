@@ -16,13 +16,21 @@ MonoBehaviour:
   displayName: Pistol
   description: pistol
   itemType: 1
-  weight: 2
   slotColor: {r: 0.9362288, g: 0.2980392, b: 1, a: 1}
   icon: {fileID: 0}
   worldPrefab: {fileID: 5422774397446772757, guid: 288bb28e890274c46b9c774e6d63c209, type: 3}
+  maxDurability: 100
+  degradationRate: 0.2
+  isStackable: 0
+  maxStackSize: 1
   weaponType: 1
   handedness: 0
-  bulletPrefab: {fileID: 1818713539240343863, guid: 124eb1575c6b7a64c97aa5ed57619b1b, type: 3}
+  ammoType: {fileID: 11400000, guid: b4270cd8027f4a13bdcb86fd8812c933, type: 2}
+  clipSize: 12
+  fireMode: 0
+  burstCount: 3
+  roundsPerMinute: 300
+  reloadTime: 1.5
   bulletSpeed: 300
   bulletDrop: 15
   bulletLifetime: 30
@@ -37,3 +45,33 @@ MonoBehaviour:
     maxHealth: 100
     breachThreshold: 20
     resistances: []
+    flammable: 1
+    flammabilityModifier: 1
+    requiresBiofluid: 0
+    biofluidProfile:
+      type: 0
+      compatibilityGroup: organic
+      bleedRate: 0.5
+      coagulationCoefficient: 1
+      conductivity: 1
+    biofluidRequirement: 0
+    producesBiofluid: 0
+    biofluidProductionRate: 0
+    pumpsBiofluid: 0
+    biofluidPumpEfficiency: 1
+    healingRate: 0
+  bagSlotCapacity: 10
+  consumableKind: 0
+  healthRestore: 0
+  biofluidRestore: 0
+  restoresMaxHealth: 0
+  treatableDamageTypes: 
+  removableConditions: 
+  saturationRestore: 0
+  isIngredient: 0
+  effectDuration: 0
+  timedEffectsShareTimer: 1
+  timedStatEffects: []
+  lifecycleEffectDuration: 1
+  lifecycleEffectsShareTimer: 1
+  lifecycleEffects: []

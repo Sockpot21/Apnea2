@@ -9,6 +9,8 @@ public class PickupItem : MonoBehaviour
 {
     [Header("Item Data")]
     public ItemInstance item;
+    [Tooltip("Optional fixed stack definition. When assigned, it replaces the individual item above.")]
+    public ItemStackDefinition stackDefinition;
 
     [Header("Prompt Style")]
     [SerializeField] private float promptVerticalOffset = 1.2f;
@@ -20,14 +22,25 @@ public class PickupItem : MonoBehaviour
     private GameObject _promptRoot;
     private TextMeshPro _promptLabel;
     private bool _promptVisible = false;
+    private bool _stackApplied;
     // ── Lifecycle ─────────────────────────────────────────────────────────────
     private void Awake()
     {
+        InitializeItem();
+    }
+
+    private void InitializeItem()
+    {
+        if (stackDefinition != null && (!_stackApplied || item == null))
+        {
+            item = stackDefinition.CreateItemInstance();
+            _stackApplied = true;
+        }
+
         // World-placed pickups only assign `definition` in the Inspector — fill in
         // runtime instance data (durability, stack count) the first time it's touched.
         if (item == null || item.definition == null)
         {
-            Debug.LogWarning($"[PickupItem] '{gameObject.name}' has no Item Definition assigned — assign one in the Inspector.", this);
             return;
         }
 
@@ -36,8 +49,25 @@ public class PickupItem : MonoBehaviour
             item.currentDurability = item.definition.maxDurability;
             item.stackCount = 1;
         }
+        item.InitializeMagazineIfNeeded();
     }
-    private void Start() => BuildPrompt();
+    private void Start()
+    {
+        InitializeItem();
+        if (item == null || item.definition == null)
+            Debug.LogWarning($"[PickupItem] '{gameObject.name}' has no item or valid stack definition assigned.", this);
+        BuildPrompt();
+    }
+
+    public ItemInstance Item => item;
+
+    public void ConfigureStack(ItemStackDefinition definition)
+    {
+        stackDefinition = definition;
+        _stackApplied = false;
+        InitializeItem();
+        RefreshPrompt();
+    }
 
     private void OnDestroy()
     {
@@ -115,6 +145,12 @@ public class PickupItem : MonoBehaviour
     private void UpdatePromptText()
     {
         if (_promptLabel == null) return;
-        _promptLabel.text = $"[E]  Pick up  {(item != null ? item.definition.displayName : "Item")}";
+        if (item?.definition == null)
+        {
+            _promptLabel.text = "[E]  Pick up  Item";
+            return;
+        }
+        string quantity = item.stackCount > 1 ? $"{item.stackCount} × " : string.Empty;
+        _promptLabel.text = $"[E]  Pick up  {quantity}{item.definition.displayName}";
     }
 }

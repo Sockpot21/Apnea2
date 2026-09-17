@@ -1,0 +1,17 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c897b0f59a8c4b0f8bb88b5a13d582d4, type: 3}
+  m_Name: PistolAmmoStack
+  m_EditorClassIdentifier: Assembly-CSharp::ItemStackDefinition
+  item: {fileID: 11400000, guid: e4b54f94999d44978bba4b3b2567392f, type: 2}
+  stackSize: 30
+  worldPrefab: {fileID: 0}

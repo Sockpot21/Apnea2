@@ -28,6 +28,20 @@ public struct CharacterState
     public Vector3 WallNormal;
 }
 
+public sealed class TimedPlayerStatEffect
+{
+    public string sourceID;
+    public string itemSourceID;
+    public string displayName;
+    public float remainingSeconds;
+    public List<AugmentStatOverride> statOverrides;
+    public ItemDefinition sourceItem;
+    public HealthManager healthManager;
+    public bool hasTargetBodyPart;
+    public BodyPart targetBodyPart;
+    public bool triggersLifecycleOnExpiry;
+}
+
 public class PlayerCharacter : MonoBehaviour, ICharacterController
 {
     [SerializeField] private KinematicCharacterMotor motor;
@@ -45,6 +59,30 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     [SerializeField] private bool sprintEnabled = true;
     [SerializeField] private float sprintSpeed = 30f;
     [SerializeField] private float sprintResponse = 20f;
+
+    [Header("Saturation & Stamina")]
+    [SerializeField, Min(1f)] private float maxSaturation = 100f;
+    [SerializeField, Min(0f), Tooltip("Saturation lost per second.")]
+    private float saturationDepletionRate = 0.01f;
+    [SerializeField, Min(1f)] private float maxStamina = 100f;
+    [SerializeField, Min(0f), Tooltip("Stamina lost per second while sprinting.")]
+    private float sprintStamina = 10f;
+    [SerializeField, Min(0f), Tooltip("Stamina spent by each successful jump, including wall and double jumps.")]
+    private float jumpStamina = 15f;
+    [SerializeField, Min(0f), Tooltip("Stamina restored per second while stationary.")]
+    private float staminaRegen = 20f;
+    [SerializeField, Min(0f), Tooltip("Stamina restored per second while movement input is held.")]
+    private float movingStaminaRegen = 10f;
+    [SerializeField, Min(0f), Tooltip("Delay after spending stamina before regeneration starts.")]
+    private float staminaRegenDelay = 0.75f;
+
+    [Header("Organic Screen Feedback")]
+    [SerializeField] private bool enableHealthScreenFeedback = true;
+    [SerializeField] private bool enableStaminaScreenFeedback = true;
+    [SerializeField] private Color criticalHealthVignetteColor = new(0.55f, 0f, 0.04f, 1f);
+    [SerializeField] private Color criticalHealthOverlayColor = new(1f, 0.12f, 0.12f, 0.58f);
+    [SerializeField, Range(0f, 1f)] private float criticalHealthVignetteIntensity = 0.48f;
+    [SerializeField, Min(0.01f)] private float organicFeedbackResponse = 8f;
 
     [Header("Jump")]
     [SerializeField] private float jumpSpeed = 20f;
@@ -75,6 +113,10 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     [SerializeField] private float horizontalWallRunDuration = 1.5f;
     [Tooltip("Horizontal wall-run speed lost per second.")]
     [SerializeField] private float horizontalWallRunDecayRate = 12f;
+    [Min(0f), Tooltip("Entry vertical speed at or below this magnitude is discarded during a horizontal wall run.")]
+    [SerializeField] private float horizontalWallRunVerticalVelocityDeadZone = 4f;
+    [Range(0f, 1f), Tooltip("Fraction of entry vertical velocity retained above the dead zone. It never contributes to horizontal wall-run speed.")]
+    [SerializeField] private float horizontalWallRunVerticalVelocityRetention = 0.15f;
     [SerializeField] private float wallRunGravityFadeTime = 0.5f;
     [SerializeField] private float wallRunCooldown = 1f;
     [SerializeField] private float wallDetectRadius = 0.6f; // raycast dist for wall check
@@ -87,6 +129,8 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     [SerializeField] private float verticalWallRunDuration = 1.2f;
     [Tooltip("Vertical wall-run speed lost per second.")]
     [SerializeField] private float verticalWallRunDecayRate = 10f;
+    [Min(0f), Tooltip("Fastest allowed downward speed when entering a vertical wall run. Falling faster cannot reattach to the wall.")]
+    [SerializeField] private float verticalWallRunMaxDownwardSpeed = 5f;
     [SerializeField] private float wallJumpWallForce = 12f;
     [SerializeField] private float wallJumpUpForce = 14f;
     [SerializeField] private float wallJumpForwardForce = 8f;
@@ -133,6 +177,11 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     private bool _requestedCrouchInAir;
     private bool _requestedSprint;
     private bool _forcedCrawl;
+    private bool _staminaSprintLocked;
+
+    private float _currentSaturation;
+    private float _currentStamina;
+    private float _staminaRegenCooldown;
 
     private float _timeSinceUngrounded;
     private float _timeSinceJumpRequested;
@@ -146,6 +195,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     private Vector3 _wallRunStartPosition;
     private float _wallRunStartSpeed;
     private float _wallRunCurrentSpeed;
+    private float _horizontalWallRunVerticalVelocity;
     private bool _wallRunIsVertical;
     private float _wallRunTimer;
     private float _wallRunFadeTimer;
@@ -158,10 +208,13 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     private bool _augmentStatsCaptured;
     private Dictionary<PlayerAugmentStat, float> _baseFloatStats;
     private Dictionary<PlayerAugmentStat, bool> _baseToggleStats;
+    private readonly List<AugmentStatOverride> _activeAugmentOverrides = new();
+    private readonly List<TimedPlayerStatEffect> _timedStatEffects = new();
 
     // OnMovementHit sets these; read at start of BeforeCharacterUpdate
     private bool _touchingWall;
     private Vector3 _currentWallNormal;
+    private readonly RaycastHit[] _wallProbeHits = new RaycastHit[16];
 
     private Collider[] _uncrouchOverlapResults;
 
@@ -178,6 +231,30 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     public Transform GetCameraTarget() => cameraTarget;
     public CharacterState GetState() => _state;
     public CharacterState GetLastState() => _lastState;
+    public float CurrentSaturation => _currentSaturation;
+    public float MaxSaturation => maxSaturation;
+    public float CurrentStamina => _currentStamina;
+    public float MaxStamina => maxStamina;
+    public bool HealthScreenFeedbackEnabled => enableHealthScreenFeedback;
+    public bool StaminaScreenFeedbackEnabled => enableStaminaScreenFeedback;
+    public Color CriticalHealthVignetteColor => criticalHealthVignetteColor;
+    public Color CriticalHealthOverlayColor => criticalHealthOverlayColor;
+    public float CriticalHealthVignetteIntensity => criticalHealthVignetteIntensity;
+    public float OrganicFeedbackResponse => organicFeedbackResponse;
+    public IReadOnlyList<TimedPlayerStatEffect> ActiveTimedEffects => _timedStatEffects;
+
+    /// <summary>
+    /// Hunger only starts penalising regeneration below 20% saturation. The
+    /// multiplier blends from 1 at 20% to 0.5 at empty.
+    /// </summary>
+    public float SaturationEfficiency
+    {
+        get
+        {
+            float ratio = maxSaturation > 0f ? _currentSaturation / maxSaturation : 0f;
+            return ratio >= .2f ? 1f : Mathf.Lerp(.5f, 1f, Mathf.Clamp01(ratio / .2f));
+        }
+    }
 
     public void QueueStanceCommand(StanceCommand command)
     {
@@ -195,6 +272,8 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     public void Initialize()
     {
         CaptureBaseAugmentStats();
+        _currentSaturation = maxSaturation;
+        _currentStamina = maxStamina;
         _state.Stance = Stance.Stand;
         _stanceGoal = StanceGoal.Stand;
         _lastState = _state;
@@ -206,13 +285,153 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     public void ApplyAugmentStatOverrides(IEnumerable<AugmentStatOverride> overrides)
     {
         CaptureBaseAugmentStats();
-        RestoreBaseAugmentStats();
+        _activeAugmentOverrides.Clear();
+        if (overrides != null) _activeAugmentOverrides.AddRange(overrides);
+        RebuildEffectiveStats();
+    }
 
-        if (overrides != null)
-            foreach (AugmentStatOverride statOverride in overrides)
-                ApplyAugmentStatOverride(statOverride);
+    public void RestoreSaturation(float amount)
+    {
+        ModifySaturation(Mathf.Max(0f, amount));
+    }
 
-        _doubleJumpAvailable = doubleJumpEnabled;
+    public void ModifySaturation(float amount)
+    {
+        _currentSaturation = Mathf.Clamp(_currentSaturation + amount, 0f, maxSaturation);
+    }
+
+    public void ModifyStamina(float amount)
+    {
+        _currentStamina = Mathf.Clamp(_currentStamina + amount, 0f, maxStamina);
+    }
+
+    public void ApplyTimedConsumableEffect(ItemDefinition item, HealthManager sourceHealthManager = null,
+        bool hasTargetBodyPart = false, BodyPart targetBodyPart = default)
+    {
+        if (item == null) return;
+
+        HealthManager resolvedHealth = sourceHealthManager
+            ?? GetComponent<HealthManager>()
+            ?? GetComponentInParent<HealthManager>();
+        string itemSourceID = string.IsNullOrWhiteSpace(item.itemID) ? item.name : item.itemID;
+        _timedStatEffects.RemoveAll(effect => effect.itemSourceID == itemSourceID);
+
+        ApplyLifecycleEffects(item, ConsumableEffectTiming.AfterUse, resolvedHealth,
+            hasTargetBodyPart, targetBodyPart, itemSourceID);
+
+        bool hasExpiryEffects = item.lifecycleEffects != null
+            && item.lifecycleEffects.Exists(effect =>
+                effect != null && effect.timing == ConsumableEffectTiming.AfterTimedEffectExpires);
+        var primaryEffects = new List<TimedPlayerStatEffect>();
+        if (item.timedStatEffects != null && item.timedStatEffects.Count > 0)
+        {
+            if (item.timedEffectsShareTimer)
+            {
+                if (item.effectDuration > 0f)
+                    primaryEffects.Add(CreateTimedEffect(item, itemSourceID,
+                        $"{itemSourceID}:timed", item.effectDuration, item.timedStatEffects,
+                        resolvedHealth, hasTargetBodyPart, targetBodyPart));
+            }
+            else
+            {
+                for (int i = 0; i < item.timedStatEffects.Count; i++)
+                {
+                    AugmentStatOverride modifier = item.timedStatEffects[i];
+                    if (modifier == null || modifier.duration <= 0f) continue;
+                    primaryEffects.Add(CreateTimedEffect(item, itemSourceID,
+                        $"{itemSourceID}:timed:{i}", modifier.duration,
+                        new List<AugmentStatOverride> { modifier }, resolvedHealth,
+                        hasTargetBodyPart, targetBodyPart, modifier.stat.ToString()));
+                }
+            }
+        }
+
+        if (primaryEffects.Count == 0 && hasExpiryEffects && item.effectDuration > 0f)
+            primaryEffects.Add(CreateTimedEffect(item, itemSourceID,
+                $"{itemSourceID}:expiry", item.effectDuration, null, resolvedHealth,
+                hasTargetBodyPart, targetBodyPart));
+
+        TimedPlayerStatEffect lastPrimary = null;
+        foreach (TimedPlayerStatEffect effect in primaryEffects)
+        {
+            _timedStatEffects.Add(effect);
+            if (lastPrimary == null || effect.remainingSeconds >= lastPrimary.remainingSeconds)
+                lastPrimary = effect;
+        }
+        if (lastPrimary != null) lastPrimary.triggersLifecycleOnExpiry = hasExpiryEffects;
+        RebuildEffectiveStats();
+    }
+
+    private TimedPlayerStatEffect CreateTimedEffect(ItemDefinition item, string itemSourceID,
+        string sourceID, float duration, List<AugmentStatOverride> modifiers,
+        HealthManager resolvedHealth, bool hasTargetBodyPart, BodyPart targetBodyPart,
+        string suffix = null)
+    {
+        string itemName = string.IsNullOrWhiteSpace(item.displayName) ? item.name : item.displayName;
+        return new TimedPlayerStatEffect
+        {
+            sourceID = sourceID,
+            itemSourceID = itemSourceID,
+            displayName = string.IsNullOrWhiteSpace(suffix) ? itemName : $"{itemName} — {suffix}",
+            remainingSeconds = duration,
+            statOverrides = modifiers,
+            sourceItem = item,
+            healthManager = resolvedHealth,
+            hasTargetBodyPart = hasTargetBodyPart,
+            targetBodyPart = targetBodyPart
+        };
+    }
+
+    private bool ApplyLifecycleEffects(ItemDefinition item, ConsumableEffectTiming timing,
+        HealthManager resolvedHealth, bool hasTargetBodyPart, BodyPart targetBodyPart,
+        string itemSourceID)
+    {
+        if (item?.lifecycleEffects == null) return false;
+        bool addedTimedModifier = false;
+        var sharedModifiers = new List<AugmentStatOverride>();
+        for (int i = 0; i < item.lifecycleEffects.Count; i++)
+        {
+            ConsumableLifecycleEffect effect = item.lifecycleEffects[i];
+            if (effect == null || effect.timing != timing) continue;
+            switch (effect.changes)
+            {
+                case ConsumableLifecycleChange.PlayerStat:
+                    if (effect.playerStatModifier == null) break;
+                    if (item.lifecycleEffectsShareTimer)
+                    {
+                        sharedModifiers.Add(effect.playerStatModifier);
+                    }
+                    else if (effect.playerStatModifier.duration > 0f)
+                    {
+                        _timedStatEffects.Add(CreateTimedEffect(item, itemSourceID,
+                            $"{itemSourceID}:lifecycle:{timing}:{i}", effect.playerStatModifier.duration,
+                            new List<AugmentStatOverride> { effect.playerStatModifier }, resolvedHealth,
+                            hasTargetBodyPart, targetBodyPart, effect.playerStatModifier.stat.ToString()));
+                        addedTimedModifier = true;
+                    }
+                    break;
+                case ConsumableLifecycleChange.Saturation:
+                    ModifySaturation(effect.amount);
+                    break;
+                case ConsumableLifecycleChange.Stamina:
+                    ModifyStamina(effect.amount);
+                    break;
+                default:
+                    resolvedHealth?.ApplyConsumableLifecycleEffect(effect,
+                        hasTargetBodyPart, targetBodyPart);
+                    break;
+            }
+        }
+
+        if (sharedModifiers.Count > 0 && item.lifecycleEffectDuration > 0f)
+        {
+            _timedStatEffects.Add(CreateTimedEffect(item, itemSourceID,
+                $"{itemSourceID}:lifecycle:{timing}", item.lifecycleEffectDuration,
+                sharedModifiers, resolvedHealth, hasTargetBodyPart, targetBodyPart,
+                "Lifecycle"));
+            addedTimedModifier = true;
+        }
+        return addedTimedModifier;
     }
 
     private void CaptureBaseAugmentStats()
@@ -239,8 +458,17 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
             { PlayerAugmentStat.VerticalWallRunStartSpeed, verticalWallRunStartSpeed },
             { PlayerAugmentStat.VerticalWallRunDuration, verticalWallRunDuration },
             { PlayerAugmentStat.VerticalWallRunDecayRate, verticalWallRunDecayRate },
+            { PlayerAugmentStat.VerticalWallRunMaxDownwardSpeed, verticalWallRunMaxDownwardSpeed },
+            { PlayerAugmentStat.HorizontalWallRunVerticalVelocityDeadZone, horizontalWallRunVerticalVelocityDeadZone },
+            { PlayerAugmentStat.HorizontalWallRunVerticalVelocityRetention, horizontalWallRunVerticalVelocityRetention },
             { PlayerAugmentStat.WallRunArcHeight, wallRunArcHeight }, { PlayerAugmentStat.ProneHeight, proneHeight },
-            { PlayerAugmentStat.ProneSpeed, proneSpeed }, { PlayerAugmentStat.ProneResponse, proneResponse }
+            { PlayerAugmentStat.ProneSpeed, proneSpeed }, { PlayerAugmentStat.ProneResponse, proneResponse },
+            { PlayerAugmentStat.MaxSaturation, maxSaturation },
+            { PlayerAugmentStat.SaturationDepletionRate, saturationDepletionRate },
+            { PlayerAugmentStat.MaxStamina, maxStamina }, { PlayerAugmentStat.SprintStamina, sprintStamina },
+            { PlayerAugmentStat.JumpStamina, jumpStamina }, { PlayerAugmentStat.StaminaRegen, staminaRegen },
+            { PlayerAugmentStat.StaminaRegenDelay, staminaRegenDelay },
+            { PlayerAugmentStat.MovingStaminaRegen, movingStaminaRegen }
         };
         _baseToggleStats = new Dictionary<PlayerAugmentStat, bool>
         {
@@ -255,13 +483,41 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         foreach (var stat in _baseToggleStats) SetAugmentToggleStat(stat.Key, stat.Value);
     }
 
-    private void ApplyAugmentStatOverride(AugmentStatOverride statOverride)
+    private void RebuildEffectiveStats()
+    {
+        float saturationRatio = maxSaturation > 0f ? _currentSaturation / maxSaturation : 1f;
+        float staminaRatio = maxStamina > 0f ? _currentStamina / maxStamina : 1f;
+        var effectiveFloatStats = new Dictionary<PlayerAugmentStat, float>(_baseFloatStats);
+        RestoreBaseAugmentStats();
+        foreach (AugmentStatOverride statOverride in _activeAugmentOverrides)
+            ApplyAugmentStatOverride(statOverride, effectiveFloatStats);
+        foreach (TimedPlayerStatEffect effect in _timedStatEffects)
+            if (effect.statOverrides != null)
+                foreach (AugmentStatOverride statOverride in effect.statOverrides)
+                    ApplyAugmentStatOverride(statOverride, effectiveFloatStats);
+        foreach (var stat in effectiveFloatStats)
+            SetAugmentFloatStat(stat.Key, stat.Value);
+        _currentSaturation = Mathf.Clamp01(saturationRatio) * maxSaturation;
+        _currentStamina = Mathf.Clamp01(staminaRatio) * maxStamina;
+        _doubleJumpAvailable = doubleJumpEnabled;
+    }
+
+    private void ApplyAugmentStatOverride(AugmentStatOverride statOverride,
+        Dictionary<PlayerAugmentStat, float> effectiveFloatStats)
     {
         if (statOverride == null) return;
         if (_baseToggleStats.ContainsKey(statOverride.stat))
             SetAugmentToggleStat(statOverride.stat, statOverride.boolValue);
-        else if (_baseFloatStats.ContainsKey(statOverride.stat))
-            SetAugmentFloatStat(statOverride.stat, statOverride.value);
+        else if (effectiveFloatStats.TryGetValue(statOverride.stat, out float currentValue))
+        {
+            float percentage = Mathf.Abs(statOverride.value) * .01f;
+            effectiveFloatStats[statOverride.stat] = statOverride.mode switch
+            {
+                PlayerStatModifierMode.PercentageIncrease => currentValue * (1f + percentage),
+                PlayerStatModifierMode.PercentageDecrease => currentValue * Mathf.Max(0f, 1f - percentage),
+                _ => statOverride.value
+            };
+        }
         else
             Debug.LogWarning($"[PlayerCharacter] Unsupported augment stat: {statOverride.stat}");
     }
@@ -309,10 +565,21 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
             case PlayerAugmentStat.VerticalWallRunStartSpeed: verticalWallRunStartSpeed = value; break;
             case PlayerAugmentStat.VerticalWallRunDuration: verticalWallRunDuration = value; break;
             case PlayerAugmentStat.VerticalWallRunDecayRate: verticalWallRunDecayRate = value; break;
+            case PlayerAugmentStat.VerticalWallRunMaxDownwardSpeed: verticalWallRunMaxDownwardSpeed = Mathf.Max(0f, value); break;
+            case PlayerAugmentStat.HorizontalWallRunVerticalVelocityDeadZone: horizontalWallRunVerticalVelocityDeadZone = Mathf.Max(0f, value); break;
+            case PlayerAugmentStat.HorizontalWallRunVerticalVelocityRetention: horizontalWallRunVerticalVelocityRetention = Mathf.Clamp01(value); break;
             case PlayerAugmentStat.WallRunArcHeight: wallRunArcHeight = value; break;
             case PlayerAugmentStat.ProneHeight: proneHeight = value; break;
             case PlayerAugmentStat.ProneSpeed: proneSpeed = value; break;
             case PlayerAugmentStat.ProneResponse: proneResponse = value; break;
+            case PlayerAugmentStat.MaxSaturation: maxSaturation = Mathf.Max(1f, value); break;
+            case PlayerAugmentStat.SaturationDepletionRate: saturationDepletionRate = Mathf.Max(0f, value); break;
+            case PlayerAugmentStat.MaxStamina: maxStamina = Mathf.Max(1f, value); break;
+            case PlayerAugmentStat.SprintStamina: sprintStamina = Mathf.Max(0f, value); break;
+            case PlayerAugmentStat.JumpStamina: jumpStamina = Mathf.Max(0f, value); break;
+            case PlayerAugmentStat.StaminaRegen: staminaRegen = Mathf.Max(0f, value); break;
+            case PlayerAugmentStat.StaminaRegenDelay: staminaRegenDelay = Mathf.Max(0f, value); break;
+            case PlayerAugmentStat.MovingStaminaRegen: movingStaminaRegen = Mathf.Max(0f, value); break;
         }
     }
 
@@ -329,14 +596,19 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         if (_requestedJump && !wasJump) _timeSinceJumpRequested = 0f;
         _requestedSustainedJump = input.JumpSustain;
 
-        _requestedSprint = sprintEnabled && input.Sprint;
-        if (!_requestedSprint) _sprintSuppressed = false;
+        if (!input.Sprint)
+        {
+            _sprintSuppressed = false;
+            _staminaSprintLocked = false;
+        }
+        _requestedSprint = sprintEnabled && input.Sprint && !_staminaSprintLocked && _currentStamina > 0f;
     }
 
     // ── Body ──────────────────────────────────────────────────────────────────
 
     public void UpdateBody(float deltaTime)
     {
+        UpdateVitals(deltaTime);
         var h = motor.Capsule.height;
         float camRatio = _state.Stance switch
         {
@@ -352,6 +624,54 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         root.localScale = Vector3.Lerp(root.localScale,
             new Vector3(1f, h / standHeight, 1f),
             1f - Mathf.Exp(-crouchHeightResponse * deltaTime));
+    }
+
+    private void UpdateVitals(float deltaTime)
+    {
+        _currentSaturation = Mathf.Max(0f, _currentSaturation - saturationDepletionRate * deltaTime);
+
+        if (_state.Stance is Stance.Sprint)
+        {
+            _currentStamina = Mathf.Max(0f, _currentStamina - sprintStamina * deltaTime);
+            _staminaRegenCooldown = staminaRegenDelay;
+            if (_currentStamina <= 0f)
+            {
+                _staminaSprintLocked = true;
+                _requestedSprint = false;
+                _state.Stance = Stance.Stand;
+            }
+        }
+        else if (_staminaRegenCooldown > 0f)
+        {
+            _staminaRegenCooldown = Mathf.Max(0f, _staminaRegenCooldown - deltaTime);
+        }
+        else
+        {
+            bool moving = _requestedMovement.sqrMagnitude > .01f;
+            float activeRegen = moving ? movingStaminaRegen : staminaRegen;
+            _currentStamina = Mathf.Min(maxStamina,
+                _currentStamina + activeRegen * SaturationEfficiency * deltaTime);
+        }
+
+        List<TimedPlayerStatEffect> expiredEffects = null;
+        for (int i = _timedStatEffects.Count - 1; i >= 0; i--)
+        {
+            _timedStatEffects[i].remainingSeconds -= deltaTime;
+            if (_timedStatEffects[i].remainingSeconds > 0f) continue;
+            expiredEffects ??= new List<TimedPlayerStatEffect>();
+            expiredEffects.Add(_timedStatEffects[i]);
+            _timedStatEffects.RemoveAt(i);
+        }
+        if (expiredEffects != null)
+        {
+            RebuildEffectiveStats();
+            foreach (TimedPlayerStatEffect expired in expiredEffects)
+                if (expired.triggersLifecycleOnExpiry)
+                    ApplyLifecycleEffects(expired.sourceItem,
+                    ConsumableEffectTiming.AfterTimedEffectExpires, expired.healthManager,
+                    expired.hasTargetBodyPart, expired.targetBodyPart, expired.itemSourceID);
+            RebuildEffectiveStats();
+        }
     }
 
     // ── Before character update ───────────────────────────────────────────────
@@ -378,8 +698,8 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
             // no longer valid, or the surface hit is no longer the same wall
             // (catches corners, where a stale raycast can clip an adjacent surface).
             bool wallStillPresent = false;
-            if (Physics.Raycast(transform.position, -_wallNormal, out RaycastHit wallCheckHit,
-                wallDetectRadius + 0.1f))
+            if (TryGetWallSurface(transform.position, -_wallNormal, wallDetectRadius + 0.1f,
+                out RaycastHit wallCheckHit))
             {
                 float checkAngle = Vector3.Angle(wallCheckHit.normal, Vector3.up);
                 bool validAngle = Mathf.Abs(checkAngle - 90f) <= wallNormalTolerance;
@@ -411,8 +731,8 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         // Vertical runs should not rely on having enough collision velocity to
         // produce a movement hit. Probe the wall the character is facing too.
         if (wantsVerticalWallRun && !hasWallContact
-            && Physics.Raycast(transform.position, transform.forward, out RaycastHit wallHit,
-                wallDetectRadius + 0.1f))
+            && TryGetWallSurface(transform.position, transform.forward, wallDetectRadius + 0.1f,
+                out RaycastHit wallHit))
         {
             candidateWallNormal = wallHit.normal;
             hasWallContact = true;
@@ -425,8 +745,8 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         // launching a full wall run into open air.
         if (hasWallContact)
         {
-            if (Physics.Raycast(transform.position, -candidateWallNormal, out RaycastHit confirmHit,
-                wallDetectRadius + 0.2f))
+            if (TryGetWallSurface(transform.position, -candidateWallNormal, wallDetectRadius + 0.2f,
+                out RaycastHit confirmHit))
             {
                 float confirmAngle = Vector3.Angle(confirmHit.normal, Vector3.up);
                 bool confirmValidAngle = Mathf.Abs(confirmAngle - 90f) <= wallNormalTolerance;
@@ -449,14 +769,20 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
             bool sameWall = Vector3.Dot(candidateWallNormal, _lastWallNormal) > 0.98f;
             bool onCooldown = sameWall && _wallRunCooldownTimer > 0f;
             bool hasHorizontalEntrySpeed = planarVel.magnitude >= wallRunMinEntrySpeed;
+            float verticalVelocity = Vector3.Dot(_tempState.Velocity, motor.CharacterUp);
+            bool fallingWithinVerticalEntryRange = verticalVelocity >= -verticalWallRunMaxDownwardSpeed;
 
             Debug.Log($"[WallRun] Touch — angle:{wallAngle:F1} isVWall:{isVWall} " +
                       $"speed:{planarVel.magnitude:F1} pitch:{lookPitch:F1} " +
-                      $"vertical:{wantsVerticalWallRun} cooldown:{onCooldown}");
+                      $"vertical:{wantsVerticalWallRun} verticalSpeed:{verticalVelocity:F1} " +
+                      $"fallRange:{fallingWithinVerticalEntryRange} cooldown:{onCooldown}");
 
             // Horizontal runs retain their speed gate. Vertical runs instead use
             // the upward look gate, so they can start from a standstill on a wall.
-            if (isVWall && (wantsVerticalWallRun || hasHorizontalEntrySpeed) && !onCooldown)
+            bool validEntryMotion = wantsVerticalWallRun
+                ? fallingWithinVerticalEntryRange
+                : hasHorizontalEntrySpeed;
+            if (isVWall && validEntryMotion && !onCooldown)
             {
                 Debug.Log("[WallRun] ENTERING");
                 EnterWallRun(candidateWallNormal, wantsVerticalWallRun);
@@ -879,7 +1205,8 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
             if (!_wallRunIsVertical && _wallRunArcUp.sqrMagnitude > 0f)
             {
                 float arcVelocity = (4f * wallRunArcHeight / duration) * (1f - 2f * runT);
-                currentVelocity += _wallRunArcUp * arcVelocity;
+                currentVelocity += _wallRunArcUp
+                    * (arcVelocity + _horizontalWallRunVerticalVelocity);
             }
         }
         else
@@ -912,6 +1239,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         if (isWallRun)
         {
             _requestedJump = false;
+            if (!TrySpendJumpStamina()) return;
             var runDir = Vector3.ProjectOnPlane(_wallRunDirection, motor.CharacterUp).normalized;
             if (runDir.sqrMagnitude <= 0.01f)
                 runDir = Vector3.ProjectOnPlane(currentVelocity, motor.CharacterUp).normalized;
@@ -931,6 +1259,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         if (grounded || canCoyote)
         {
             _requestedJump = false;
+            if (!TrySpendJumpStamina()) return;
             _requestedCrouch = false;
             _requestedCrouchInAir = false;
             motor.ForceUnground(0f);
@@ -948,6 +1277,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         {
             Debug.Log("[DoubleJump] Executing");
             _requestedJump = false;
+            if (!TrySpendJumpStamina()) return;
             _doubleJumpAvailable = false;
             motor.ForceUnground(0f);
 
@@ -962,6 +1292,15 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
             _timeSinceJumpRequested += deltaTime;
             _requestedJump = _timeSinceJumpRequested < coyoteTime;
         }
+    }
+
+    private bool TrySpendJumpStamina()
+    {
+        if (jumpStamina <= 0f) return true;
+        if (_currentStamina + Mathf.Epsilon < jumpStamina) return false;
+        _currentStamina = Mathf.Max(0f, _currentStamina - jumpStamina);
+        _staminaRegenCooldown = staminaRegenDelay;
+        return true;
     }
 
     // ── Wall run enter / exit ─────────────────────────────────────────────────
@@ -1008,18 +1347,34 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
             ? Vector3.zero
             : Vector3.ProjectOnPlane(motor.CharacterUp, wallNormal).normalized;
 
-        // Capture only the component that can travel along the wall. The first
-        // wall-run update boosts and decelerates this velocity from there.
-        Vector3 entryVelocityOnWall = Vector3.ProjectOnPlane(_tempState.Velocity, wallNormal);
+        // Horizontal run speed comes exclusively from planar movement along the
+        // wall. Vertical fall speed is handled separately so it can never be
+        // converted into a horizontal launch.
+        Vector3 planarEntryVelocity = Vector3.ProjectOnPlane(
+            _tempState.Velocity, motor.CharacterUp);
+        Vector3 planarVelocityOnWall = Vector3.ProjectOnPlane(planarEntryVelocity, wallNormal);
+        float alongWallEntrySpeed = Mathf.Abs(Vector3.Dot(planarVelocityOnWall, _wallRunDirection));
+        float entryVerticalVelocity = Vector3.Dot(_tempState.Velocity, motor.CharacterUp);
+        _horizontalWallRunVerticalVelocity = 0f;
+        if (!_wallRunIsVertical
+            && Mathf.Abs(entryVerticalVelocity) > horizontalWallRunVerticalVelocityDeadZone)
+        {
+            float retainedMagnitude = (Mathf.Abs(entryVerticalVelocity)
+                - horizontalWallRunVerticalVelocityDeadZone)
+                * horizontalWallRunVerticalVelocityRetention;
+            _horizontalWallRunVerticalVelocity = Mathf.Sign(entryVerticalVelocity)
+                * retainedMagnitude;
+        }
         _wallRunStartSpeed = _wallRunIsVertical
             ? verticalWallRunStartSpeed
-            : Mathf.Max(entryVelocityOnWall.magnitude, wallRunMinEntrySpeed)
+            : Mathf.Max(alongWallEntrySpeed, wallRunMinEntrySpeed)
               * horizontalWallRunEntrySpeedMultiplier;
         _wallRunCurrentSpeed = _wallRunStartSpeed;
 
         Debug.Log($"[WallRun] Enter — pitchAngle:{pitchAngle:F1} " +
                   $"vertical:{_wallRunIsVertical} dir:{_wallRunDirection} " +
-                  $"entrySpeed:{_wallRunStartSpeed:F1} normal:{wallNormal}");
+                  $"entrySpeed:{_wallRunStartSpeed:F1} " +
+                  $"retainedVertical:{_horizontalWallRunVerticalVelocity:F1} normal:{wallNormal}");
     }
 
     private void ExitWallRun()
@@ -1032,6 +1387,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         _wallRunArcUp = Vector3.zero;
         _wallRunStartSpeed = 0f;
         _wallRunCurrentSpeed = 0f;
+        _horizontalWallRunVerticalVelocity = 0f;
         _wallRunTimer = 0f;
         _wallRunFadeTimer = 0f;
         Debug.Log("[WallRun] Exited");
@@ -1105,7 +1461,11 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
                 : elapsed;
             float distance = _wallRunStartSpeed * travelTime - 0.5f * decayRate * travelTime * travelTime;
             float arcOffset = _wallRunIsVertical ? 0f : 4f * wallRunArcHeight * t * (1f - t);
-            Vector3 point = _wallRunStartPosition + _wallRunDirection * distance + _wallRunArcUp * arcOffset;
+            float retainedVerticalOffset = _wallRunIsVertical
+                ? 0f
+                : _horizontalWallRunVerticalVelocity * elapsed;
+            Vector3 point = _wallRunStartPosition + _wallRunDirection * distance
+                + _wallRunArcUp * (arcOffset + retainedVerticalOffset);
             Gizmos.DrawLine(previous, point);
             previous = point;
         }
@@ -1113,7 +1473,39 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         Gizmos.DrawRay(_wallRunStartPosition, _wallNormal);
     }
 
-    public bool IsColliderValidForCollisions(Collider coll) => true;
+    private bool TryGetWallSurface(Vector3 origin, Vector3 direction, float distance,
+        out RaycastHit nearestHit)
+    {
+        nearestHit = default;
+        if (direction.sqrMagnitude <= Mathf.Epsilon) return false;
+
+        int hitCount = Physics.RaycastNonAlloc(origin, direction.normalized, _wallProbeHits,
+            distance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+        float nearestDistance = float.PositiveInfinity;
+        bool found = false;
+        for (int i = 0; i < hitCount; i++)
+        {
+            RaycastHit candidate = _wallProbeHits[i];
+            if (IsOwnCollider(candidate.collider) || candidate.distance >= nearestDistance) continue;
+            nearestDistance = candidate.distance;
+            nearestHit = candidate;
+            found = true;
+        }
+        return found;
+    }
+
+    private bool IsOwnCollider(Collider coll)
+    {
+        if (coll == null) return true;
+        if (motor != null && (coll == motor.Capsule
+            || coll.GetComponentInParent<KinematicCharacterMotor>() == motor)) return true;
+        if (coll.GetComponentInParent<PlayerCharacter>() == this) return true;
+        Transform candidate = coll.transform;
+        return candidate == transform || candidate.IsChildOf(transform)
+            || (root != null && (candidate == root || candidate.IsChildOf(root)));
+    }
+
+    public bool IsColliderValidForCollisions(Collider coll) => !IsOwnCollider(coll);
     public void OnDiscreteCollisionDetected(Collider hitCollider) { }
     public void OnGroundHit(Collider hitCollider, Vector3 hitNormal, Vector3 hitPoint,
         ref HitStabilityReport r)
@@ -1122,6 +1514,7 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
     public void OnMovementHit(Collider hitCollider, Vector3 hitNormal, Vector3 hitPoint,
         ref HitStabilityReport r)
     {
+        if (IsOwnCollider(hitCollider)) return;
         float angle = Vector3.Angle(hitNormal, Vector3.up);
         if (Mathf.Abs(angle - 90f) <= wallNormalTolerance)
         {
