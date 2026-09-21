@@ -17,6 +17,9 @@ public class ItemInstance
     [System.NonSerialized] public bool isReloading;
     [System.NonSerialized] public float reloadEndsAt;
     [System.NonSerialized] public float nextAllowedFireTime;
+    [System.NonSerialized] public bool isCyclingAction;
+    [System.NonSerialized] public float actionCycleEndsAt;
+    [System.NonSerialized] public bool reloadQueued;
 
     public ItemInstance(ItemDefinition definition, int stackCount = 1)
     {
@@ -29,7 +32,7 @@ public class ItemInstance
     public void InitializeMagazineIfNeeded()
     {
         if (magazineInitialized || definition == null || !definition.IsRanged) return;
-        currentClipAmmo = Mathf.Max(1, definition.clipSize);
+        currentClipAmmo = Mathf.Max(1, definition.magazineCapacity);
         magazineInitialized = true;
     }
 

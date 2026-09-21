@@ -1062,7 +1062,15 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         _state.Acceloration = Vector3.zero;
 
         // ── Wall run ──────────────────────────────────────────────────────────
-        if (_state.Stance is Stance.WallRun)
+        if (_state.Stance is Stance.WallRun
+            && grapplingHook != null && grapplingHook.IsGrappling)
+        {
+            // The grapple takes ownership of airborne movement. Without this,
+            // wall-run velocity is rebuilt every tick and fights the rope.
+            ExitWallRun();
+            motor.ForceUnground(0f);
+        }
+        else if (_state.Stance is Stance.WallRun)
         {
             UpdateWallRunVelocity(ref currentVelocity, deltaTime);
             HandleJump(ref currentVelocity, deltaTime, isWallRun: true);
@@ -1175,8 +1183,13 @@ public class PlayerCharacter : MonoBehaviour, ICharacterController
         HandleJump(ref currentVelocity, deltaTime, isWallRun: false);
 
         if (grapplingHook != null && grapplingHook.IsGrappling)
+        {
+            Vector3 velocityBeforeGrapple = currentVelocity;
             grapplingHook.ApplyGrappleVelocity(ref currentVelocity, deltaTime,
                 _requestedMovement, airAccelaration);
+            _state.Acceloration += (currentVelocity - velocityBeforeGrapple)
+                / Mathf.Max(deltaTime, Mathf.Epsilon);
+        }
     }
 
     // ── Wall run velocity ─────────────────────────────────────────────────────

@@ -10,11 +10,16 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ccfd940126f153c42828d3556af138bd, type: 3}
-  m_Name: Pistol
+  m_Name: Donkey
   m_EditorClassIdentifier: Assembly-CSharp::ItemDefinition
-  itemID: pistol
-  displayName: Pistol
-  description: pistol
+  itemID: donkey
+  displayName: Donkey
+  description: "The Donkey is a tired work horse of a gun, having changed hands several
+    times over and now landing in yours. It is the very least collection of components
+    required to still be considered a firearm but in the land of the blind, the one
+    eyed man is king. The Donkey is not a combat weapon but a last resort in civil
+    conflict; a deterrent. It\u2019ll keep you alive, but it won\u2019t win wars.\r\n(Stripped
+    Winchester Model 1906 .22LR Pistol[Custom] [Scrap Tier Ranged Weapon])"
   itemType: 1
   slotColor: {r: 0.9362288, g: 0.2980392, b: 1, a: 1}
   icon: {fileID: 0}
@@ -25,15 +30,27 @@ MonoBehaviour:
   maxStackSize: 1
   weaponType: 1
   handedness: 0
+  weaponDamage: 20
+  weaponDamageType: 1
   ammoType: {fileID: 11400000, guid: b4270cd8027f4a13bdcb86fd8812c933, type: 2}
-  clipSize: 12
+  magazineCapacity: 12
+  actionType: 2
   fireMode: 0
   burstCount: 3
-  roundsPerMinute: 300
-  reloadTime: 1.5
-  bulletSpeed: 300
-  bulletDrop: 15
-  bulletLifetime: 30
+  cyclicRateRPM: 300
+  semiAutomaticShotDelay: 0.2
+  actionCycleTime: 0.75
+  reloadStyle: 0
+  reloadTime: 2
+  perRoundReloadTime: 0.6
+  muzzleVelocityMetersPerSecond: 330
+  maximumProjectileRangeMeters: 2000
+  accuracyMOA: 2
+  verticalRecoilDegrees: 2
+  horizontalRecoilDegrees: 0.25
+  recoilRecoverySeconds: 0.5
+  legacyBulletDrop: 15
+  legacyBulletLifetimeSeconds: 30
   aimFOV: 20
   targetBodyPart: 0
   layerStats:

@@ -119,10 +119,10 @@ public class Player : MonoBehaviour
                 }
             }
 
-            if (input.GrappleAscend.IsPressed())
-                grapplingHook.Ascend(deltaTime);
-            else
-                grapplingHook.StopAdjust();
+            float reelInput = input.GrappleAscend.IsPressed() ? 1f
+                : input.GrappleDescend.IsPressed() ? -1f
+                : 0f;
+            grapplingHook.SetReelInput(reelInput);
         }
 
 #if UNITY_EDITOR
@@ -152,12 +152,13 @@ public class Player : MonoBehaviour
         if (playerEquipment == null)
         {
             Debug.LogError("[Player] PlayerEquipment not assigned!");
-            cameraFOV.UpdateFOV(deltaTime, state.Stance, state.Velocity, false, 45f);
+            cameraFOV.UpdateFOV(deltaTime, state.Stance, state.Velocity,
+                false, 45f, grapplingHook);
         }
         else
         {
             cameraFOV.UpdateFOV(deltaTime, state.Stance, state.Velocity,
-                playerEquipment.IsAiming, playerEquipment.AimFOV);
+                playerEquipment.IsAiming, playerEquipment.AimFOV, grapplingHook);
         }
 
         organicScreenFeedback?.UpdateFeedback(deltaTime);

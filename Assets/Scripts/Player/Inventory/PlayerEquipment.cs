@@ -14,6 +14,7 @@ public class PlayerEquipment : MonoBehaviour
     [SerializeField] private HealthManager healthManager;
     [SerializeField] private PlayerInventory inventory;
     [SerializeField] private PlayerCharacter playerCharacter;
+    [SerializeField] private PlayerCamera playerCamera;
 
     [Header("Melee Hit Check")]
     [SerializeField, Min(0.1f)] private float meleeHitDistance = 2f;
@@ -30,6 +31,7 @@ public class PlayerEquipment : MonoBehaviour
     private readonly HashSet<HandSlot> _disabledHands = new();
     private readonly Dictionary<ItemInstance, Coroutine> _reloads = new();
     private readonly Dictionary<ItemInstance, Coroutine> _bursts = new();
+    private readonly Dictionary<ItemInstance, Coroutine> _actionCycles = new();
 
     // Muzzle points — found on instantiated weapon prefabs
     // TODO: when real weapon models are ready, instantiate worldPrefab and
@@ -59,6 +61,8 @@ public class PlayerEquipment : MonoBehaviour
             playerCharacter = GetComponent<PlayerCharacter>()
                 ?? GetComponentInParent<PlayerCharacter>()
                 ?? FindAnyObjectByType<PlayerCharacter>();
+        if (playerCamera == null)
+            playerCamera = FindAnyObjectByType<PlayerCamera>();
         foreach (BodyPart part in System.Enum.GetValues(typeof(BodyPart)))
             _armourSlots[part] = null;
         AmmoHUD.GetOrCreate(this, inventory);
@@ -355,7 +359,25 @@ public class PlayerEquipment : MonoBehaviour
 
     private void HandleRangedInput(HandSlot hand, ItemInstance weapon, bool pressedThisFrame, bool held)
     {
-        if (weapon.isReloading) return;
+        if (weapon.isReloading)
+        {
+            // Tube/internal-magazine reloads may be interrupted once a usable
+            // round has actually been inserted. Detachable reloads remain atomic.
+            if (pressedThisFrame && weapon.definition.reloadStyle == ReloadStyle.PerRound
+                && weapon.currentClipAmmo > 0)
+                CancelReload(weapon);
+            else
+                return;
+        }
+
+        if (weapon.isCyclingAction) return;
+
+        if (weapon.definition.actionType != WeaponActionType.SelfLoading)
+        {
+            if (pressedThisFrame) TryFire(hand, weapon);
+            return;
+        }
+
         switch (weapon.definition.fireMode)
         {
             case FireMode.SemiAutomatic:
@@ -374,7 +396,7 @@ public class PlayerEquipment : MonoBehaviour
     private System.Collections.IEnumerator BurstRoutine(HandSlot hand, ItemInstance weapon)
     {
         int shots = Mathf.Max(1, weapon.definition.burstCount);
-        float interval = SecondsPerShot(weapon);
+        float interval = SecondsPerCyclicShot(weapon);
         for (int i = 0; i < shots; i++)
         {
             if (!IsEquipped(weapon) || weapon.isReloading || !TryFire(hand, weapon)) break;
@@ -388,7 +410,8 @@ public class PlayerEquipment : MonoBehaviour
 
     private bool TryFire(HandSlot hand, ItemInstance weapon)
     {
-        if (weapon == null || !weapon.definition.IsRanged || weapon.IsBroken || weapon.isReloading)
+        if (weapon == null || !weapon.definition.IsRanged || weapon.IsBroken
+            || weapon.isReloading || weapon.isCyclingAction)
             return false;
         weapon.InitializeMagazineIfNeeded();
         if (Time.time < weapon.nextAllowedFireTime) return false;
@@ -427,6 +450,7 @@ public class PlayerEquipment : MonoBehaviour
             spawnDir = ray.direction;
         }
 
+        spawnDir = ApplyDispersion(spawnDir, weapon.definition.accuracyMOA);
         var bulletGO = Instantiate(projectilePrefab, spawnPos,
                                    Quaternion.LookRotation(spawnDir));
 
@@ -449,30 +473,81 @@ public class PlayerEquipment : MonoBehaviour
             if (pc != null) inheritedVel = pc.GetState().Velocity;
         }
 
-        bullet.speed = weapon.definition.bulletSpeed;
-        bullet.drop = weapon.definition.bulletDrop;
-        bullet.lifetime = weapon.definition.bulletLifetime;
+        bullet.speed = weapon.definition.muzzleVelocityMetersPerSecond;
+        bullet.maximumRangeMeters = weapon.definition.EffectiveProjectileRangeMeters;
         bullet.damage = weapon.definition.weaponDamage;
         bullet.damageType = weapon.definition.weaponDamageType;
         bullet.Launch(spawnDir, inheritedVel, gameObject);
+        playerCamera?.AddRecoil(weapon.definition.verticalRecoilDegrees,
+            weapon.definition.horizontalRecoilDegrees, weapon.definition.recoilRecoverySeconds);
 
         weapon.currentClipAmmo--;
-        weapon.nextAllowedFireTime = Time.time + SecondsPerShot(weapon);
+        if (weapon.definition.actionType == WeaponActionType.SelfLoading)
+            weapon.nextAllowedFireTime = Time.time + SelfLoadingShotDelay(weapon);
+        else
+            BeginActionCycle(weapon);
         weapon.Degrade();
 
         Debug.Log($"[Equipment] Fired '{weapon.definition.displayName}' — " +
-                  $"speed: {weapon.definition.bulletSpeed}, drop: {weapon.definition.bulletDrop}, " +
-                  $"lifetime: {(weapon.definition.bulletLifetime <= 0f ? "∞" : weapon.definition.bulletLifetime + "s")}, " +
-                  $"ammo: {weapon.currentClipAmmo}/{weapon.definition.clipSize}, " +
+                  $"muzzle velocity: {weapon.definition.muzzleVelocityMetersPerSecond:F1} m/s, " +
+                  $"range: {weapon.definition.EffectiveProjectileRangeMeters:F0} m, " +
+                  $"ammo: {weapon.currentClipAmmo}/{weapon.definition.magazineCapacity}, " +
                   $"durability: {weapon.currentDurability:F1}/{weapon.definition.maxDurability:F1}");
         OnEquipmentChanged?.Invoke();
-        if (weapon.currentClipAmmo <= 0) BeginReload(weapon);
+        if (weapon.currentClipAmmo <= 0 && weapon.definition.actionType == WeaponActionType.SelfLoading)
+            BeginReload(weapon);
         ReturnBrokenHandItem(hand);
         return true;
     }
 
-    private static float SecondsPerShot(ItemInstance weapon) =>
-        60f / Mathf.Max(1f, weapon.definition.roundsPerMinute);
+    private static float SelfLoadingShotDelay(ItemInstance weapon) =>
+        weapon.definition.fireMode == FireMode.SemiAutomatic
+            ? Mathf.Max(0f, weapon.definition.semiAutomaticShotDelay)
+            : SecondsPerCyclicShot(weapon);
+
+    private static float SecondsPerCyclicShot(ItemInstance weapon) =>
+        60f / Mathf.Max(1f, weapon.definition.cyclicRateRPM);
+
+    private static Vector3 ApplyDispersion(Vector3 direction, float accuracyMOA)
+    {
+        if (accuracyMOA <= 0f) return direction.normalized;
+        // MOA describes the approximate full group diameter, so dispersion
+        // uses half that angle as the cone radius.
+        float radius = Mathf.Tan(accuracyMOA / 120f * Mathf.Deg2Rad);
+        Vector2 offset = Random.insideUnitCircle * radius;
+        Vector3 forward = direction.normalized;
+        Vector3 right = Vector3.Cross(forward, Vector3.up);
+        if (right.sqrMagnitude < 0.0001f)
+            right = Vector3.Cross(forward, Vector3.right);
+        right.Normalize();
+        Vector3 up = Vector3.Cross(right, forward).normalized;
+        return (forward + right * offset.x + up * offset.y).normalized;
+    }
+
+    private void BeginActionCycle(ItemInstance weapon)
+    {
+        if (weapon == null || weapon.definition.actionType == WeaponActionType.SelfLoading) return;
+        float duration = Mathf.Max(0f, weapon.definition.actionCycleTime);
+        weapon.isCyclingAction = true;
+        weapon.actionCycleEndsAt = Time.time + duration;
+        weapon.nextAllowedFireTime = weapon.actionCycleEndsAt;
+        _actionCycles[weapon] = StartCoroutine(ActionCycleRoutine(weapon, duration));
+    }
+
+    private System.Collections.IEnumerator ActionCycleRoutine(ItemInstance weapon, float duration)
+    {
+        if (duration > 0f) yield return new WaitForSeconds(duration);
+        else yield return null;
+        _actionCycles.Remove(weapon);
+        weapon.isCyclingAction = false;
+        weapon.actionCycleEndsAt = 0f;
+        if (IsEquipped(weapon) && (weapon.currentClipAmmo <= 0 || weapon.reloadQueued))
+        {
+            weapon.reloadQueued = false;
+            BeginReload(weapon);
+        }
+        OnEquipmentChanged?.Invoke();
+    }
 
     public void ReloadAll()
     {
@@ -486,33 +561,87 @@ public class PlayerEquipment : MonoBehaviour
     {
         if (weapon == null || weapon.isReloading || weapon.IsBroken || !IsEquipped(weapon)) return;
         weapon.InitializeMagazineIfNeeded();
-        int needed = Mathf.Max(1, weapon.definition.clipSize) - weapon.currentClipAmmo;
+        int needed = Mathf.Max(1, weapon.definition.magazineCapacity) - weapon.currentClipAmmo;
         if (needed <= 0 || GetAmmoReserve(weapon) <= 0 || weapon.definition.ammoType == null) return;
+        if (weapon.isCyclingAction)
+        {
+            weapon.reloadQueued = true;
+            return;
+        }
+        weapon.reloadQueued = false;
         weapon.isReloading = true;
-        weapon.reloadEndsAt = Time.time + Mathf.Max(0f, weapon.definition.reloadTime);
+        float firstDuration = weapon.definition.reloadStyle == ReloadStyle.PerRound
+            ? weapon.definition.perRoundReloadTime
+            : weapon.definition.reloadTime;
+        weapon.reloadEndsAt = Time.time + Mathf.Max(0f, firstDuration);
         _reloads[weapon] = StartCoroutine(ReloadRoutine(weapon));
         OnEquipmentChanged?.Invoke();
     }
 
     private System.Collections.IEnumerator ReloadRoutine(ItemInstance weapon)
     {
-        float duration = Mathf.Max(0f, weapon.definition.reloadTime);
-        if (duration > 0f) yield return new WaitForSeconds(duration);
-        else yield return null;
-        _reloads.Remove(weapon);
-        if (!IsEquipped(weapon))
+        if (weapon.definition.reloadStyle == ReloadStyle.PerRound)
         {
-            weapon.isReloading = false;
+            yield return ReloadPerRoundRoutine(weapon);
+            FinishReload(weapon);
             yield break;
         }
 
-        int needed = Mathf.Max(1, weapon.definition.clipSize) - weapon.currentClipAmmo;
+        float duration = Mathf.Max(0f, weapon.definition.reloadTime);
+        if (duration > 0f) yield return new WaitForSeconds(duration);
+        else yield return null;
+        if (!IsEquipped(weapon))
+        {
+            FinishReload(weapon);
+            yield break;
+        }
+
+        int needed = Mathf.Max(1, weapon.definition.magazineCapacity) - weapon.currentClipAmmo;
         int loaded = inventory != null ? inventory.ConsumeAmmo(weapon.definition.ammoType, needed) : 0;
         weapon.currentClipAmmo += loaded;
+        Debug.Log($"[Equipment] Reloaded '{weapon.definition.displayName}' with {loaded} round(s) — " +
+                  $"{weapon.currentClipAmmo}/{weapon.definition.magazineCapacity}.");
+        FinishReload(weapon);
+    }
+
+    private System.Collections.IEnumerator ReloadPerRoundRoutine(ItemInstance weapon)
+    {
+        int capacity = Mathf.Max(1, weapon.definition.magazineCapacity);
+        while (IsEquipped(weapon) && weapon.currentClipAmmo < capacity && GetAmmoReserve(weapon) > 0)
+        {
+            float duration = Mathf.Max(0f, weapon.definition.perRoundReloadTime);
+            weapon.reloadEndsAt = Time.time + duration;
+            if (duration > 0f) yield return new WaitForSeconds(duration);
+            else yield return null;
+            if (!IsEquipped(weapon) || !weapon.isReloading) yield break;
+
+            int loaded = inventory != null ? inventory.ConsumeAmmo(weapon.definition.ammoType, 1) : 0;
+            if (loaded <= 0) yield break;
+            weapon.currentClipAmmo += loaded;
+            Debug.Log($"[Equipment] Inserted one round into '{weapon.definition.displayName}' — " +
+                      $"{weapon.currentClipAmmo}/{capacity}.");
+            OnEquipmentChanged?.Invoke();
+        }
+    }
+
+    private void FinishReload(ItemInstance weapon)
+    {
+        _reloads.Remove(weapon);
         weapon.isReloading = false;
         weapon.reloadEndsAt = 0f;
-        Debug.Log($"[Equipment] Reloaded '{weapon.definition.displayName}' with {loaded} round(s) — " +
-                  $"{weapon.currentClipAmmo}/{weapon.definition.clipSize}.");
+        OnEquipmentChanged?.Invoke();
+    }
+
+    private void CancelReload(ItemInstance weapon)
+    {
+        if (weapon == null) return;
+        if (_reloads.TryGetValue(weapon, out Coroutine reload))
+        {
+            StopCoroutine(reload);
+            _reloads.Remove(weapon);
+        }
+        weapon.isReloading = false;
+        weapon.reloadEndsAt = 0f;
         OnEquipmentChanged?.Invoke();
     }
 
@@ -522,18 +651,20 @@ public class PlayerEquipment : MonoBehaviour
     private void CancelWeaponActions(ItemInstance weapon)
     {
         if (weapon == null) return;
-        if (_reloads.TryGetValue(weapon, out Coroutine reload))
-        {
-            StopCoroutine(reload);
-            _reloads.Remove(weapon);
-        }
+        CancelReload(weapon);
         if (_bursts.TryGetValue(weapon, out Coroutine burst))
         {
             StopCoroutine(burst);
             _bursts.Remove(weapon);
         }
-        weapon.isReloading = false;
-        weapon.reloadEndsAt = 0f;
+        if (_actionCycles.TryGetValue(weapon, out Coroutine cycle))
+        {
+            StopCoroutine(cycle);
+            _actionCycles.Remove(weapon);
+        }
+        weapon.isCyclingAction = false;
+        weapon.actionCycleEndsAt = 0f;
+        weapon.reloadQueued = false;
     }
 
     /// <summary>Call from melee hit detection after a weapon strikes a solid target.</summary>

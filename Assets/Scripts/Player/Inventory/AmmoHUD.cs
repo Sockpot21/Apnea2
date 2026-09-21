@@ -70,8 +70,12 @@ public class AmmoHUD : MonoBehaviour
         weapon.InitializeMagazineIfNeeded();
         int reserve = _equipment.GetAmmoReserve(weapon);
         string state = weapon.isReloading
-            ? $"  RELOADING {Mathf.Max(0f, weapon.reloadEndsAt - Time.time):F1}s"
-            : weapon.currentClipAmmo <= 0 ? "  EMPTY" : string.Empty;
+            ? weapon.definition.reloadStyle == ReloadStyle.PerRound
+                ? $"  LOADING ROUND {Mathf.Max(0f, weapon.reloadEndsAt - Time.time):F1}s"
+                : $"  RELOADING {Mathf.Max(0f, weapon.reloadEndsAt - Time.time):F1}s"
+            : weapon.isCyclingAction
+                ? $"  CYCLING {Mathf.Max(0f, weapon.actionCycleEndsAt - Time.time):F1}s"
+                : weapon.currentClipAmmo <= 0 ? "  EMPTY" : string.Empty;
         return $"{handPrefix}{weapon.definition.displayName}  {weapon.currentClipAmmo} / {reserve}{state}";
     }
 }
